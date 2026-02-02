@@ -1,0 +1,157 @@
+import logging
+import random
+import string
+from dataclasses import dataclass
+from typing import Optional
+
+from django.conf import settings
+from django.core.cache import cache
+from django.core.mail import send_mail
+from django.utils import timezone
+
+logger = logging.getLogger(__name__)
+
+
+@dataclass
+class RateLimitResult:
+    allowed: bool
+    remaining_time: Optional[int] = None
+    message: Optional[str] = None
+
+
+class EmailRateLimiter:
+    def __init__(self) -> None:
+        self.limit_seconds = getattr(settings, "EMAIL_SEND_LIMIT", 60)
+        self.cache_prefix = "email_rate_limit"
+
+    def _get_ip_key(self, ip_address: str) -> str:
+        return f"{self.cache_prefix}:ip:{ip_address}"
+
+    def _get_email_key(self, email: str) -> str:
+        return f"{self.cache_prefix}:email:{email.strip().lower()}"
+
+    def _get_combined_key(self, ip_address: str, email: str) -> str:
+        return f"{self.cache_prefix}:combined:{ip_address}:{email.strip().lower()}"
+
+    def _get_timestamp(self) -> int:
+        return int(timezone.now().timestamp())
+
+    def _calculate_remaining_time(self, last_send_time: int) -> int:
+        current_time = self._get_timestamp()
+        elapsed = current_time - last_send_time
+        return max(0, self.limit_seconds - elapsed)
+
+    def check_rate_limit(self, ip_address: str, email: str) -> RateLimitResult:
+        try:
+            ip_key = self._get_ip_key(ip_address)
+            email_key = self._get_email_key(email)
+            combined_key = self._get_combined_key(ip_address, email)
+
+            ip_last_send = cache.get(ip_key)
+            if ip_last_send:
+                remaining = self._calculate_remaining_time(ip_last_send)
+                if remaining > 0:
+                    return RateLimitResult(
+                        allowed=False,
+                        remaining_time=remaining,
+                        message=f"Please wait {remaining} seconds before requesting another code."
+                    )
+
+            email_last_send = cache.get(email_key)
+            if email_last_send:
+                remaining = self._calculate_remaining_time(email_last_send)
+                if remaining > 0:
+                    return RateLimitResult(
+                        allowed=False,
+                        remaining_time=remaining,
+                        message=f"Please wait {remaining} seconds before requesting another code for this email."
+                    )
+
+            combined_last_send = cache.get(combined_key)
+            if combined_last_send:
+                remaining = self._calculate_remaining_time(combined_last_send)
+                if remaining > 0:
+                    return RateLimitResult(
+                        allowed=False,
+                        remaining_time=remaining,
+                        message=f"Please wait {remaining} seconds before requesting another code."
+                    )
+
+            return RateLimitResult(allowed=True)
+
+        except Exception as e:
+            logger.error(f"Rate limit check failed: {e}")
+            return RateLimitResult(allowed=True)
+
+    def record_email_send(self, ip_address: str, email: str) -> None:
+        try:
+            now_ts = self._get_timestamp()
+            ttl = self.limit_seconds + 60
+
+            cache.set(self._get_ip_key(ip_address), now_ts, ttl)
+            cache.set(self._get_email_key(email), now_ts, ttl)
+            cache.set(self._get_combined_key(ip_address, email), now_ts, ttl)
+
+        except Exception as e:
+            logger.error(f"Rate limit record failed: {e}")
+
+
+email_rate_limiter = EmailRateLimiter()
+
+
+def norm_email(email: str) -> str:
+    return email.strip().lower()
+
+
+def get_verification_key(email: str) -> str:
+    return f"email_verification:{norm_email(email)}"
+
+
+def generate_code(length: int) -> str:
+    return "".join(random.choices(string.digits, k=length))
+
+
+def send_verification_email_to(email: str, ip_address: Optional[str] = None) -> str:
+    email = norm_email(email)
+    code_len = getattr(settings, "EMAIL_VERIFICATION_CODE_LENGTH", 6)
+    expiry_seconds = getattr(
+        settings, "EMAIL_VERIFICATION_CODE_EXPIRY", 15 * 60)
+    code = generate_code(code_len)
+    cache_key = get_verification_key(email)
+    cache.set(cache_key, code, expiry_seconds)
+    subject = "Email verification - MIG Tender"
+    message = f"""
+Hello!
+
+Your verification code: {code}
+
+The code is valid for 15 minutes.
+
+If you did not request this, simply ignore this email.
+
+With regards,
+The MIG Tender team
+""".strip()
+    send_mail(
+        subject=subject,
+        message=message,
+        from_email=getattr(settings, "DEFAULT_FROM_EMAIL", None),
+        recipient_list=[email],
+        fail_silently=False,
+    )
+    if ip_address:
+        email_rate_limiter.record_email_send(ip_address, email)
+    return code
+
+
+def verify_code(email: str, code: str) -> bool:
+    email = norm_email(email)
+    cache_key = get_verification_key(email)
+    stored_code = cache.get(cache_key)
+    if stored_code and stored_code == code.strip():
+        cache.delete(cache_key)
+        return True
+    return False
+
+
+send_verification_email = send_verification_email_to
