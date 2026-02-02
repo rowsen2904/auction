@@ -72,12 +72,13 @@ class User(AbstractBaseUser, PermissionsMixin):
         _("role"),
         max_length=20,
         choices=Roles.choices,
-        default=Roles.DEVELOPER
+        default=Roles.DEVELOPER,
+        db_index=True
     )
 
     is_staff = models.BooleanField(default=False)
     is_active = models.BooleanField(default=True)
-    date_joined = models.DateTimeField(default=timezone.now)
+    date_joined = models.DateTimeField(default=timezone.now, db_index=True)
 
     objects = UserManager()
 
@@ -88,6 +89,9 @@ class User(AbstractBaseUser, PermissionsMixin):
     class Meta:
         verbose_name = _("user")
         verbose_name_plural = _("users")
+        indexes = [
+            models.Index(fields=["role", "is_active"]),
+        ]
 
     def __str__(self):
         return self.email
@@ -109,27 +113,42 @@ class User(AbstractBaseUser, PermissionsMixin):
 
 
 class Broker(models.Model):
+    class VerificationStatuses(models.TextChoices):
+        PENDING = 'pending', _('Pending')
+        ACCEPTED = 'accepted', _('Accepted')
+        REJECTED = 'rejected', _('Rejected')
+
     user = models.OneToOneField(
         User,
         on_delete=models.CASCADE,
         related_name='broker'
     )
 
-    is_verified = models.BooleanField(default=False)
+    is_verified = models.BooleanField(default=False, db_index=True)
     verified_at = models.DateTimeField(null=True, blank=True)
     verification_document = models.FileField(
         upload_to=broker_verification_document_folder,
         null=True,
         blank=True
     )
+    verification_status = models.CharField(
+        _('verification status'),
+        max_length=20,
+        choices=VerificationStatuses.choices,
+        default=VerificationStatuses.PENDING,
+        db_index=True
+    )
 
     class Meta:
         verbose_name = _("broker")
         verbose_name_plural = _("brokers")
-    
+        indexes = [
+            models.Index(fields=["is_verified", "verified_at"]),
+        ]
+
     def __str__(self):
         return '{}'.format(self.user.get_full_name())
-    
+
     def save(self, *args, **kwargs):
         if self.user.role != User.Roles.BROKER:
             self.user.role = User.Roles.BROKER

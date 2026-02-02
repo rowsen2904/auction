@@ -110,9 +110,7 @@ class GetVerificationCodeView(generics.GenericAPIView):
 
         if User.objects.filter(email=email).exists():
             return Response(
-                {
-                    "message": _("User is already exists.")
-                },
+                {"message": _("User is already exists.")},
                 status=status.HTTP_409_CONFLICT,
             )
 
