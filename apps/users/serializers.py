@@ -1,10 +1,12 @@
 from django.contrib.auth import authenticate, get_user_model
+from django.contrib.auth.password_validation import validate_password
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.utils.translation import gettext_lazy as _
 from rest_framework import serializers
 from rest_framework.exceptions import AuthenticationFailed
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
-from .utils import verify_code
+from .utils import verify_code, is_email_verified_for_registration
 from auction.settings import EMAIL_VERIFICATION_CODE_LENGTH
 
 User = get_user_model()
@@ -97,6 +99,72 @@ class VerifyEmailSerializer(serializers.Serializer):
         return data
 
 
+# Register serializers
+
+
+class BaseRegisterSerializer(serializers.Serializer):
+    email = serializers.EmailField()
+
+    password = serializers.CharField(
+        write_only=True,
+        min_length=8,
+        max_length=128,
+        style={"input_type": "password"},
+    )
+    password_confirm = serializers.CharField(
+        write_only=True,
+        min_length=8,
+        max_length=128,
+        style={"input_type": "password"},
+    )
+
+    first_name = serializers.CharField(
+        required=False, allow_blank=True, max_length=150)
+    last_name = serializers.CharField(
+        required=False, allow_blank=True, max_length=150)
+
+    def validate_email(self, value: str) -> str:
+        email = value.strip().lower()
+
+        if not is_email_verified_for_registration(email):
+            raise serializers.ValidationError(
+                _("Email is not verified."), code="email_not_verified")
+
+        if User.objects.filter(email=email).exists():
+            raise serializers.ValidationError(
+                _("User already exists."), code="email_already_registered")
+
+        return email
+
+    def validate(self, attrs):
+        password = attrs.get("password")
+        password_confirm = attrs.get("password_confirm")
+
+        if password != password_confirm:
+            raise serializers.ValidationError(
+                {"password_confirm": [_("Passwords do not match.")]},
+                code="passwords_do_not_match",
+            )
+
+        # Run Django password validators (AUTH_PASSWORD_VALIDATORS)
+        try:
+            validate_password(password=password, user=None)
+        except DjangoValidationError as e:
+            # e.messages is a list of validator messages
+            raise serializers.ValidationError(
+                {"password": e.messages}, code="password_invalid")
+
+        return attrs
+
+
+class RegisterDeveloperSerializer(BaseRegisterSerializer):
+    """
+    Registers a developer user (role=developer).
+    Email must be verified via OTP beforehand.
+    """
+    pass
+
+
 # --- Response serializers (nice Swagger) ---
 
 class MessageEmailResponseSerializer(serializers.Serializer):
@@ -116,3 +184,28 @@ class RateLimitResponseSerializer(serializers.Serializer):
 
 class ErrorResponseSerializer(serializers.Serializer):
     error = serializers.CharField()
+
+
+class RegisterResponseSerializer(TokenObtainPairSerializer):
+    message = serializers.CharField()
+    refresh = serializers.CharField(read_only=True)
+    access = serializers.CharField(read_only=True)
+    user = TokenUserSerializer()
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        # TokenObtainPairSerializer normally adds username/password input fields.
+        # For registration response, we don't want them.
+        self.fields.pop(self.username_field, None)
+        self.fields.pop("password", None)
+
+    @classmethod
+    def build_payload(cls, user, message: str = "Registration successful."):
+        refresh = cls.get_token(user)
+        return {
+            "message": message,
+            "refresh": str(refresh),
+            "access": str(refresh.access_token),
+            "user": TokenUserSerializer(user).data,
+        }
