@@ -4,6 +4,11 @@ from rest_framework import serializers
 from rest_framework.exceptions import AuthenticationFailed
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
+from .utils import verify_code
+from auction.settings import EMAIL_VERIFICATION_CODE_LENGTH
+
+User = get_user_model()
+
 
 class TokenUserSerializer(serializers.Serializer):
     id = serializers.IntegerField(read_only=True)
@@ -62,3 +67,52 @@ class LoginSerializer(TokenObtainPairSerializer):
             "access": str(refresh.access_token),
             "user": TokenUserSerializer(user).data,
         }
+
+
+class EmailSerializer(serializers.Serializer):
+    """Email input serializer."""
+    email = serializers.EmailField()
+
+
+class VerifyEmailSerializer(serializers.Serializer):
+    """
+    Verify email OTP code serializer.
+
+    IMPORTANT:
+    - No user creation
+    - Only validates the OTP
+    """
+    email = serializers.EmailField()
+    code = serializers.CharField(
+        max_length=EMAIL_VERIFICATION_CODE_LENGTH,
+        min_length=EMAIL_VERIFICATION_CODE_LENGTH,
+        required=True,
+        help_text=f"{EMAIL_VERIFICATION_CODE_LENGTH}-digit OTP code"
+    )
+
+    def validate(self, data):
+        if not verify_code(data["email"], data["code"]):
+            raise serializers.ValidationError(
+                {"code": "Invalid or expired code"})
+        return data
+
+
+# --- Response serializers (nice Swagger) ---
+
+class MessageEmailResponseSerializer(serializers.Serializer):
+    message = serializers.CharField()
+    email = serializers.EmailField()
+
+
+class MessageResponseSerializer(serializers.Serializer):
+    message = serializers.CharField()
+
+
+class RateLimitResponseSerializer(serializers.Serializer):
+    error = serializers.CharField()
+    remaining_time = serializers.IntegerField()
+    code = serializers.CharField()
+
+
+class ErrorResponseSerializer(serializers.Serializer):
+    error = serializers.CharField()

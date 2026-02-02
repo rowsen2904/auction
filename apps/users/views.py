@@ -1,9 +1,26 @@
 from django.utils.translation import gettext_lazy as _
-from drf_spectacular.utils import extend_schema
+from django.contrib.auth import get_user_model
+from drf_spectacular.utils import extend_schema, OpenApiResponse, OpenApiExample
+from rest_framework.response import Response
+from rest_framework import status
+from rest_framework.permissions import AllowAny
+from rest_framework import generics
 from rest_framework_simplejwt.serializers import TokenRefreshSerializer
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
-from .serializers import LoginSerializer
+from .serializers import (
+    LoginSerializer,
+    EmailSerializer,
+    VerifyEmailSerializer,
+    MessageEmailResponseSerializer,
+    MessageResponseSerializer,
+    RateLimitResponseSerializer,
+    ErrorResponseSerializer
+)
+from .utils import email_rate_limiter, send_verification_email_to
+from helpers.utils import get_client_ip
+
+User = get_user_model()
 
 
 class LoginView(TokenObtainPairView):
@@ -29,3 +46,207 @@ class CustomTokenRefreshView(TokenRefreshView):
     )
     def post(self, request, *args, **kwargs):
         return super().post(request, *args, **kwargs)
+
+
+@extend_schema(
+    summary="Request verification code",
+    description=(
+        "Sends a numeric OTP verification code to the provided email address.\n\n"
+        "**Important:** This endpoint does **not** create a user account."
+    ),
+    request=EmailSerializer,
+    responses={
+        200: OpenApiResponse(
+            response=MessageEmailResponseSerializer,
+            description="Verification code sent.",
+            examples=[
+                OpenApiExample(
+                    "Success",
+                    value={"message": "Verification code sent to your email.",
+                           "email": "user@example.com"},
+                )
+            ],
+        ),
+        409: OpenApiResponse(
+            response=ErrorResponseSerializer,
+            description="User is already exists.",
+            examples=[
+                OpenApiExample(
+                    "User is already exists",
+                    value={
+                        "error": "User is already exists.",
+                    },
+                )
+            ],
+        ),
+        429: OpenApiResponse(
+            response=RateLimitResponseSerializer,
+            description="Rate limit exceeded.",
+            examples=[
+                OpenApiExample(
+                    "Rate limited",
+                    value={
+                        "error": "Please wait 42 seconds before requesting another code.",
+                        "remaining_time": 42,
+                        "code": "rate_limit_exceeded",
+                    },
+                )
+            ],
+        ),
+    },
+    tags=["Auth"],
+)
+class GetVerificationCodeView(generics.GenericAPIView):
+    """Request an email OTP code (no user creation)."""
+    permission_classes = [AllowAny]
+    serializer_class = EmailSerializer
+
+    def post(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        email = serializer.validated_data["email"]
+        client_ip = get_client_ip(request)
+
+        if User.objects.filter(email=email).exists():
+            return Response(
+                {
+                    "message": _("User is already exists.")
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        rate_limit_result = email_rate_limiter.check_rate_limit(
+            client_ip, email)
+        if not rate_limit_result.allowed:
+            return Response(
+                {
+                    "error": rate_limit_result.message,
+                    "remaining_time": rate_limit_result.remaining_time,
+                    "code": "rate_limit_exceeded",
+                },
+                status=status.HTTP_429_TOO_MANY_REQUESTS,
+            )
+
+        try:
+            send_verification_email_to(email, client_ip)
+            return Response(
+                {"message": "Verification code sent to your email.", "email": email},
+                status=status.HTTP_200_OK,
+            )
+        except Exception as e:
+            return Response(
+                {"error": f"Failed to send email. Please try again later. {e}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+
+@extend_schema(
+    summary="Verify email code",
+    description=(
+        "Verifies the OTP code for the given email address.\n\n"
+        "- Returns **200** if the code is valid\n"
+        "- Returns **400** if the code is invalid or expired\n\n"
+        "**Important:** This endpoint does **not** create a user account and does **not** return JWT tokens."
+    ),
+    request=VerifyEmailSerializer,
+    responses={
+        200: OpenApiResponse(
+            response=MessageEmailResponseSerializer,
+            description="Email code verified.",
+            examples=[
+                OpenApiExample(
+                    "Verified",
+                    value={"message": "Email verified successfully.",
+                           "email": "user@example.com"},
+                )
+            ],
+        ),
+        400: OpenApiResponse(
+            description="Invalid or expired code.",
+            examples=[
+                OpenApiExample(
+                    "Invalid code",
+                    value={"code": ["Invalid or expired code"]},
+                )
+            ],
+        ),
+    },
+    tags=["Auth"],
+)
+class VerifyEmailView(generics.GenericAPIView):
+    """Verify OTP code only (no user creation, no tokens)."""
+    permission_classes = [AllowAny]
+    serializer_class = VerifyEmailSerializer
+
+    def post(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        email = serializer.validated_data["email"]
+        return Response(
+            {"message": "Email verified successfully.", "email": email},
+            status=status.HTTP_200_OK,
+        )
+
+
+@extend_schema(
+    summary="Resend verification code",
+    description=(
+        "Sends a new OTP verification code to the provided email address.\n\n"
+        "**Important:** This endpoint does **not** create a user account."
+    ),
+    request=EmailSerializer,
+    responses={
+        200: OpenApiResponse(
+            response=MessageResponseSerializer,
+            description="New verification code sent.",
+            examples=[
+                OpenApiExample(
+                    "Resent",
+                    value={"message": "New code sent to your email."},
+                )
+            ],
+        ),
+        429: OpenApiResponse(
+            response=RateLimitResponseSerializer,
+            description="Rate limit exceeded.",
+        ),
+    },
+    tags=["Auth"],
+)
+class ResendCodeView(generics.GenericAPIView):
+    """Resend email OTP code (no user creation)."""
+    permission_classes = [AllowAny]
+    serializer_class = EmailSerializer
+
+    def post(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        email = serializer.validated_data["email"]
+        client_ip = get_client_ip(request)
+
+        rate_limit_result = email_rate_limiter.check_rate_limit(
+            client_ip, email)
+        if not rate_limit_result.allowed:
+            return Response(
+                {
+                    "error": rate_limit_result.message,
+                    "remaining_time": rate_limit_result.remaining_time,
+                    "code": "rate_limit_exceeded",
+                },
+                status=status.HTTP_429_TOO_MANY_REQUESTS,
+            )
+
+        try:
+            send_verification_email_to(email, client_ip)
+            return Response(
+                {"message": "New code sent to your email."},
+                status=status.HTTP_200_OK,
+            )
+        except Exception:
+            return Response(
+                {"error": "Failed to send email. Please try again later."},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
