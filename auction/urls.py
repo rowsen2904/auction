@@ -25,7 +25,10 @@ from drf_spectacular.views import (
     SpectacularRedocView,
 )
 
+from .views import HealthCheckView
+
 urlpatterns = [
+    path('health/', HealthCheckView.as_view(), name='health'),
     path('admin/', admin.site.urls),
 
     path('api/v1/schema/', SpectacularAPIView.as_view(), name='schema'),
