@@ -6,6 +6,7 @@ from rest_framework import serializers
 from rest_framework.exceptions import AuthenticationFailed
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
+from .models import Broker
 from .utils import verify_code, is_email_verified_for_registration
 from auction.settings import EMAIL_VERIFICATION_CODE_LENGTH
 
@@ -22,6 +23,15 @@ class TokenUserSerializer(serializers.Serializer):
         required=False,
         read_only=True
     )
+
+    broker = serializers.SerializerMethodField()
+
+    def get_broker(self, obj):
+        # Return broker fields only for broker users (or if broker exists)
+        broker = getattr(obj, "broker", None)
+        if not broker:
+            return None
+        return BrokerInfoSerializer(broker, context=self.context).data
 
 
 class LoginSerializer(TokenObtainPairSerializer):
@@ -163,6 +173,41 @@ class RegisterDeveloperSerializer(BaseRegisterSerializer):
     Email must be verified via OTP beforehand.
     """
     pass
+
+
+class RegisterBrokerSerializer(BaseRegisterSerializer):
+    """
+    Registers a broker user (role=broker) and creates Broker profile.
+    Requires verification_document upload.
+    """
+    verification_document = serializers.FileField(required=True)
+
+    def validate_verification_document(self, file):
+        # Optional: basic validation (keep it minimal and fast)
+        if file.size > 10 * 1024 * 1024:  # 10MB
+            raise serializers.ValidationError(
+                _("File is too large (max 10MB)."), code="file_too_large")
+        return file
+
+
+class BrokerInfoSerializer(serializers.ModelSerializer):
+    verification_document_url = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Broker
+        fields = [
+            "is_verified",
+            "verification_status",
+            "verified_at",
+            "verification_document_url",
+        ]
+
+    def get_verification_document_url(self, obj):
+        request = self.context.get("request")
+        if not obj.verification_document:
+            return None
+        url = obj.verification_document.url
+        return request.build_absolute_uri(url) if request else url
 
 
 # --- Response serializers (nice Swagger) ---

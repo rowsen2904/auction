@@ -9,6 +9,7 @@ from rest_framework.response import Response
 from rest_framework_simplejwt.serializers import TokenRefreshSerializer
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
+from .models import Broker
 from .serializers import (
     LoginSerializer,
     EmailSerializer,
@@ -17,6 +18,7 @@ from .serializers import (
     MessageResponseSerializer,
     RateLimitResponseSerializer,
     ErrorResponseSerializer,
+    RegisterBrokerSerializer,
     RegisterDeveloperSerializer,
     RegisterResponseSerializer,
     TokenUserSerializer
@@ -334,10 +336,99 @@ class RegisterDeveloperView(generics.GenericAPIView):
 
             # One-time use of verified flag
             clear_email_verified_for_registration(email)
+
             payload = RegisterResponseSerializer.build_payload(user)
             return Response(payload, status=status.HTTP_201_CREATED)
         except IntegrityError:
             # Handles race condition if two requests try to create the same email concurrently
+            return Response(
+                {"error": _("User already exists.")},
+                status=status.HTTP_409_CONFLICT,
+            )
+
+
+@extend_schema(
+    summary="Register broker",
+    description=(
+        "Registers a new user with role **broker** and creates a **Broker** profile.\n\n"
+        "Requirements:\n"
+        "- Email must be verified via OTP beforehand.\n"
+        "- Must upload `verification_document`.\n"
+        "- Broker is created with `is_verified=false` and `verification_status=pending`."
+    ),
+    request=RegisterBrokerSerializer,
+    responses={
+        201: OpenApiResponse(
+            response=RegisterResponseSerializer,
+            description="Broker registered.",
+            examples=[
+                OpenApiExample(
+                    "Created",
+                    value={
+                        "message": "Registration successful.",
+                        "user": {
+                            "id": 2,
+                            "email": "broker@example.com",
+                            "first_name": "Alice",
+                            "last_name": "Smith",
+                            "role": "broker",
+                        },
+                    },
+                )
+            ],
+        ),
+        400: OpenApiResponse(
+            response=ErrorResponseSerializer,
+            description="Validation error (e.g., email not verified, missing file).",
+        ),
+        409: OpenApiResponse(
+            response=ErrorResponseSerializer,
+            description="User already exists.",
+        ),
+    },
+    tags=["Auth"],
+)
+class RegisterBrokerView(generics.GenericAPIView):
+    permission_classes = [AllowAny]
+    serializer_class = RegisterBrokerSerializer
+    parser_classes = [MultiPartParser, FormParser]
+
+    def post(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        email = serializer.validated_data["email"]
+        password = serializer.validated_data["password"]
+        first_name = serializer.validated_data.get("first_name", "")
+        last_name = serializer.validated_data.get("last_name", "")
+        verification_document = serializer.validated_data["verification_document"]
+
+        try:
+            with transaction.atomic():
+                user = User.objects.create_user(
+                    email=email,
+                    password=password,
+                    first_name=first_name,
+                    last_name=last_name,
+                    role=User.Roles.BROKER,
+                    is_active=True,
+                )
+
+                broker = Broker.objects.create(
+                    user=user,
+                    verification_document=verification_document,
+                )
+
+                # Cache the relation on the user instance to avoid an extra DB query in serializer
+                user.broker = broker
+
+            # One-time use of verified flag
+            clear_email_verified_for_registration(email)
+
+            payload = RegisterResponseSerializer.build_payload(user)
+            return Response(payload, status=status.HTTP_201_CREATED)
+
+        except IntegrityError:
             return Response(
                 {"error": _("User already exists.")},
                 status=status.HTTP_409_CONFLICT,

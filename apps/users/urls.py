@@ -6,6 +6,7 @@ from .views import (
     VerifyEmailView,
     ResendCodeView,
     GetVerificationCodeView,
+    RegisterBrokerView,
     RegisterDeveloperView
 )
 
@@ -20,4 +21,5 @@ urlpatterns = [
     path('resend-code/', ResendCodeView.as_view(), name='resend-code'),
     # Register
     path("register/developer/", RegisterDeveloperView.as_view(), name="register-developer"),
+    path("register/broker/", RegisterBrokerView.as_view(), name="register-broker"),
 ]
