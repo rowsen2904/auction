@@ -132,8 +132,8 @@ SIMPLE_JWT = {
 
 
 SPECTACULAR_SETTINGS = {
-    'TITLE': 'Auction API',
-    'DESCRIPTION': 'Auction API',
+    'TITLE': 'MIG Tender API',
+    'DESCRIPTION': 'MIG Tender - online auction of real estate',
     'VERSION': '0.0.1',
     'SERVE_INCLUDE_SCHEMA': False,
     'SWAGGER_UI_DIST': 'SIDECAR',
