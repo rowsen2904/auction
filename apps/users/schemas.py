@@ -47,7 +47,7 @@ REGISTER_BROKER_DOC = (
     "Registers a new user with role **broker** and creates a **Broker** profile.\n\n"
     "Requirements:\n"
     "- Email must be verified via OTP beforehand.\n"
-    "- Must upload `verification_document`.\n"
+    "- Must upload `passport`.\n"
     "- Broker is created with `is_verified=false` and `verification_status=pending`."
 )
 
@@ -226,7 +226,7 @@ register_broker_schema = extend_schema(
                                 "is_verified": False,
                                 "verification_status": "pending",
                                 "verified_at": None,
-                                "verification_document_url": "http://host:7676/media/...",
+                                "passport_url": "http://host:7676/media/...",
                             },
                             "developer": None,
                         },

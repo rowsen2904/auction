@@ -209,7 +209,7 @@ class RegisterBrokerView(generics.GenericAPIView):
         password = serializer.validated_data["password"]
         first_name = serializer.validated_data.get("first_name", "")
         last_name = serializer.validated_data.get("last_name", "")
-        verification_document = serializer.validated_data["verification_document"]
+        passport = serializer.validated_data["passport"]
 
         try:
             with transaction.atomic():
@@ -224,7 +224,7 @@ class RegisterBrokerView(generics.GenericAPIView):
 
                 broker = Broker.objects.create(
                     user=user,
-                    verification_document=verification_document,
+                    passport=passport,
                 )
 
                 # Cache the relation on the user instance to avoid an extra DB query in serializer

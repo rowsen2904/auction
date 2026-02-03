@@ -2,18 +2,18 @@ import os
 from uuid import uuid4
 
 from django.contrib.auth.models import AbstractBaseUser, PermissionsMixin, BaseUserManager
-from django.core.exceptions import ValidationError
+from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
 
-def broker_verification_document_folder(instance, filename):
+def broker_passport_folder(instance, filename):
     _, ext = os.path.splitext(filename)
     ext = ext.lower()
 
     user_id = instance.user_id or "tmp"
-    return f"brokers/{user_id}/verification_documents/{uuid4().hex}{ext}"
+    return f"brokers/{user_id}/passports/{uuid4().hex}{ext}"
 
 
 class UserManager(BaseUserManager):
@@ -126,8 +126,8 @@ class Broker(models.Model):
 
     is_verified = models.BooleanField(default=False, db_index=True)
     verified_at = models.DateTimeField(null=True, blank=True)
-    verification_document = models.FileField(
-        upload_to=broker_verification_document_folder,
+    passport = models.FileField(
+        upload_to=broker_passport_folder,
         null=True,
         blank=True
     )

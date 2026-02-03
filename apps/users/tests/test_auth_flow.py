@@ -226,7 +226,7 @@ class TestRegistrationFlow(APITestCase):
             format="multipart",
         )
         self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("verification_document", resp.data)
+        self.assertIn("passport", resp.data)
 
     def test_register_broker_success_creates_broker_profile(self):
         email = "broker2@example.com"
@@ -248,7 +248,7 @@ class TestRegistrationFlow(APITestCase):
                         "password_confirm": "StrongPass123!",
                         "first_name": "Alice",
                         "last_name": "Smith",
-                        "verification_document": file,
+                        "passport": file,
                     },
                     format="multipart",
                 )
@@ -270,7 +270,7 @@ class TestRegistrationFlow(APITestCase):
         broker = Broker.objects.get(user=user)
         self.assertFalse(broker.is_verified)
         self.assertEqual(broker.verification_status, Broker.VerificationStatuses.PENDING)
-        self.assertTrue(broker.verification_document.name)
+        self.assertTrue(broker.passport.name)
 
         # Registration verified flag should be cleared
         self.assertFalse(cache.get(get_registration_verified_key(email)))

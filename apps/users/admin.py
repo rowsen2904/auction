@@ -72,7 +72,7 @@ class BrokerInline(admin.StackedInline):
     model = Broker
     extra = 0
     can_delete = True
-    fields = ("is_verified", "verified_at", "verification_document")
+    fields = ("is_verified", "verified_at", "passport")
     readonly_fields = ("verified_at",)
 
 

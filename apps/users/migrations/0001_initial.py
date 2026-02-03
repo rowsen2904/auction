@@ -47,7 +47,7 @@ class Migration(migrations.Migration):
                 ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
                 ('is_verified', models.BooleanField(default=False)),
                 ('verified_at', models.DateTimeField(blank=True, null=True)),
-                ('verification_document', models.FileField(blank=True, null=True, upload_to=apps.users.models.broker_verification_document_folder)),
+                ('verification_document', models.FileField(blank=True, null=True, upload_to=apps.users.models.broker_passport_folder)),
                 ('user', models.OneToOneField(on_delete=django.db.models.deletion.CASCADE, related_name='broker', to=settings.AUTH_USER_MODEL)),
             ],
             options={

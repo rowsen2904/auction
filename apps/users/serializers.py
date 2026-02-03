@@ -185,11 +185,11 @@ class RegisterDeveloperSerializer(BaseRegisterSerializer):
 class RegisterBrokerSerializer(BaseRegisterSerializer):
     """
     Registers a broker user (role=broker) and creates Broker profile.
-    Requires verification_document upload.
+    Requires passport upload.
     """
-    verification_document = serializers.FileField(required=True)
+    passport = serializers.FileField(required=True)
 
-    def validate_verification_document(self, file):
+    def validate_passport(self, file):
         # Optional: basic validation (keep it minimal and fast)
         if file.size > 10 * 1024 * 1024:  # 10MB
             raise serializers.ValidationError(
@@ -198,7 +198,7 @@ class RegisterBrokerSerializer(BaseRegisterSerializer):
 
 
 class BrokerInfoSerializer(serializers.ModelSerializer):
-    verification_document_url = serializers.SerializerMethodField()
+    passport_url = serializers.SerializerMethodField()
 
     class Meta:
         model = Broker
@@ -206,14 +206,14 @@ class BrokerInfoSerializer(serializers.ModelSerializer):
             "is_verified",
             "verification_status",
             "verified_at",
-            "verification_document_url",
+            "passport_url",
         ]
 
-    def get_verification_document_url(self, obj):
+    def get_passport_url(self, obj):
         request = self.context.get("request")
-        if not obj.verification_document:
+        if not obj.passport:
             return None
-        url = obj.verification_document.url
+        url = obj.passport.url
         return request.build_absolute_uri(url) if request else url
 
 
