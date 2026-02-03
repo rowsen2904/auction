@@ -1,7 +1,6 @@
 from django.contrib.auth import get_user_model
 from django.db import transaction, IntegrityError
 from django.utils.translation import gettext_lazy as _
-from drf_spectacular.utils import extend_schema, OpenApiResponse, OpenApiExample
 from rest_framework import generics, status
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from rest_framework.permissions import AllowAny
@@ -10,24 +9,28 @@ from rest_framework_simplejwt.serializers import TokenRefreshSerializer
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
 from .models import Broker
+from .schemas import (
+    login_schema,
+    refresh_schema,
+    get_verification_code_schema,
+    verify_email_schema,
+    resend_code_schema,
+    register_developer_schema,
+    register_broker_schema,
+)
 from .serializers import (
     LoginSerializer,
     EmailSerializer,
     VerifyEmailSerializer,
-    MessageEmailResponseSerializer,
-    MessageResponseSerializer,
-    RateLimitResponseSerializer,
-    ErrorResponseSerializer,
     RegisterBrokerSerializer,
     RegisterDeveloperSerializer,
     RegisterResponseSerializer,
-    TokenUserSerializer
 )
 from .utils import (
     email_rate_limiter,
     send_verification_email_to,
     mark_email_verified_for_registration,
-    clear_email_verified_for_registration
+    clear_email_verified_for_registration,
 )
 from helpers.utils import get_client_ip
 
@@ -37,81 +40,22 @@ User = get_user_model()
 class LoginView(TokenObtainPairView):
     serializer_class = LoginSerializer
 
-    @extend_schema(
-        request=LoginSerializer,
-        responses=LoginSerializer,
-        description=_("Obtain JWT token pair."),
-        tags=["Auth"],
-    )
+    @login_schema
     def post(self, request, *args, **kwargs):
         return super().post(request, *args, **kwargs)
 
 
 class CustomTokenRefreshView(TokenRefreshView):
-    @extend_schema(
-        request=TokenRefreshSerializer,
-        responses=TokenRefreshSerializer,
-        description=_(
-            "Takes a refresh type JSON web token and returns an access type JSON web token if the refresh token is valid."),
-        tags=["Auth"],
-    )
+    @refresh_schema
     def post(self, request, *args, **kwargs):
         return super().post(request, *args, **kwargs)
 
 
-@extend_schema(
-    summary="Request verification code",
-    description=(
-        "Sends a numeric OTP verification code to the provided email address.\n\n"
-        "**Important:** This endpoint does **not** create a user account."
-    ),
-    request=EmailSerializer,
-    responses={
-        200: OpenApiResponse(
-            response=MessageEmailResponseSerializer,
-            description="Verification code sent.",
-            examples=[
-                OpenApiExample(
-                    "Success",
-                    value={"message": "Verification code sent to your email.",
-                           "email": "user@example.com"},
-                )
-            ],
-        ),
-        409: OpenApiResponse(
-            response=ErrorResponseSerializer,
-            description="User is already exists.",
-            examples=[
-                OpenApiExample(
-                    "User is already exists",
-                    value={
-                        "error": "User is already exists.",
-                    },
-                )
-            ],
-        ),
-        429: OpenApiResponse(
-            response=RateLimitResponseSerializer,
-            description="Rate limit exceeded.",
-            examples=[
-                OpenApiExample(
-                    "Rate limited",
-                    value={
-                        "error": "Please wait 42 seconds before requesting another code.",
-                        "remaining_time": 42,
-                        "code": "rate_limit_exceeded",
-                    },
-                )
-            ],
-        ),
-    },
-    tags=["Auth"],
-)
 class GetVerificationCodeView(generics.GenericAPIView):
-    """Request an email OTP code (no user creation)."""
     permission_classes = [AllowAny]
     serializer_class = EmailSerializer
 
+    @get_verification_code_schema
     def post(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -121,12 +65,11 @@ class GetVerificationCodeView(generics.GenericAPIView):
 
         if User.objects.filter(email=email).exists():
             return Response(
-                {"message": _("User is already exists.")},
+                {"error": _("User already exists.")},
                 status=status.HTTP_409_CONFLICT,
             )
 
-        rate_limit_result = email_rate_limiter.check_rate_limit(
-            client_ip, email)
+        rate_limit_result = email_rate_limiter.check_rate_limit(client_ip, email)
         if not rate_limit_result.allowed:
             return Response(
                 {
@@ -143,51 +86,18 @@ class GetVerificationCodeView(generics.GenericAPIView):
                 {"message": "Verification code sent to your email.", "email": email},
                 status=status.HTTP_200_OK,
             )
-        except Exception as e:
+        except Exception:
             return Response(
-                {"error": f"Failed to send email. Please try again later. {e}"},
+                {"error": "Failed to send email. Please try again later."},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
 
-@extend_schema(
-    summary="Verify email code",
-    description=(
-        "Verifies the OTP code for the given email address.\n\n"
-        "- Returns **200** if the code is valid\n"
-        "- Returns **400** if the code is invalid or expired\n\n"
-        "**Important:** This endpoint does **not** create a user account and does **not** return JWT tokens."
-    ),
-    request=VerifyEmailSerializer,
-    responses={
-        200: OpenApiResponse(
-            response=MessageEmailResponseSerializer,
-            description="Email code verified.",
-            examples=[
-                OpenApiExample(
-                    "Verified",
-                    value={"message": "Email verified successfully.",
-                           "email": "user@example.com"},
-                )
-            ],
-        ),
-        400: OpenApiResponse(
-            description="Invalid or expired code.",
-            examples=[
-                OpenApiExample(
-                    "Invalid code",
-                    value={"code": ["Invalid or expired code"]},
-                )
-            ],
-        ),
-    },
-    tags=["Auth"],
-)
 class VerifyEmailView(generics.GenericAPIView):
-    """Verify OTP code only (no user creation, no tokens)."""
     permission_classes = [AllowAny]
     serializer_class = VerifyEmailSerializer
 
+    @verify_email_schema
     def post(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -203,36 +113,11 @@ class VerifyEmailView(generics.GenericAPIView):
         )
 
 
-@extend_schema(
-    summary="Resend verification code",
-    description=(
-        "Sends a new OTP verification code to the provided email address.\n\n"
-        "**Important:** This endpoint does **not** create a user account."
-    ),
-    request=EmailSerializer,
-    responses={
-        200: OpenApiResponse(
-            response=MessageResponseSerializer,
-            description="New verification code sent.",
-            examples=[
-                OpenApiExample(
-                    "Resent",
-                    value={"message": "New code sent to your email."},
-                )
-            ],
-        ),
-        429: OpenApiResponse(
-            response=RateLimitResponseSerializer,
-            description="Rate limit exceeded.",
-        ),
-    },
-    tags=["Auth"],
-)
 class ResendCodeView(generics.GenericAPIView):
-    """Resend email OTP code (no user creation)."""
     permission_classes = [AllowAny]
     serializer_class = EmailSerializer
 
+    @resend_code_schema
     def post(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -240,8 +125,7 @@ class ResendCodeView(generics.GenericAPIView):
         email = serializer.validated_data["email"]
         client_ip = get_client_ip(request)
 
-        rate_limit_result = email_rate_limiter.check_rate_limit(
-            client_ip, email)
+        rate_limit_result = email_rate_limiter.check_rate_limit(client_ip, email)
         if not rate_limit_result.allowed:
             return Response(
                 {
@@ -254,10 +138,7 @@ class ResendCodeView(generics.GenericAPIView):
 
         try:
             send_verification_email_to(email, client_ip)
-            return Response(
-                {"message": "New code sent to your email."},
-                status=status.HTTP_200_OK,
-            )
+            return Response({"message": "New code sent to your email."}, status=status.HTTP_200_OK)
         except Exception:
             return Response(
                 {"error": "Failed to send email. Please try again later."},
@@ -265,55 +146,12 @@ class ResendCodeView(generics.GenericAPIView):
             )
 
 
-# Register views
-
-@extend_schema(
-    summary="Register developer",
-    description=(
-        "Registers a new user with role **developer**.\n\n"
-        "Requirements:\n"
-        "- Email must be verified via OTP beforehand.\n"
-        "- Admin role cannot be selected."
-    ),
-    request=RegisterDeveloperSerializer,
-    responses={
-        201: OpenApiResponse(
-            response=RegisterResponseSerializer,
-            description="Developer registered.",
-            examples=[
-                OpenApiExample(
-                    "Created",
-                    value={
-                        "message": "Registration successful.",
-                        "refresh_token": "Some refresh token.",
-                        "access_token": "Some access token.",
-                        "user": {
-                            "id": 1,
-                            "email": "user@example.com",
-                            "first_name": "John",
-                            "last_name": "Doe",
-                            "role": "developer",
-                        },
-                    },
-                )
-            ],
-        ),
-        400: OpenApiResponse(
-            response=ErrorResponseSerializer,
-            description="Validation error (e.g., email not verified).",
-        ),
-        409: OpenApiResponse(
-            response=ErrorResponseSerializer,
-            description="User already exists.",
-        ),
-    },
-    tags=["Auth"],
-)
 class RegisterDeveloperView(generics.GenericAPIView):
     permission_classes = [AllowAny]
     serializer_class = RegisterDeveloperSerializer
     parser_classes = [JSONParser]
 
+    @register_developer_schema
     def post(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -339,6 +177,7 @@ class RegisterDeveloperView(generics.GenericAPIView):
 
             payload = RegisterResponseSerializer.build_payload(user)
             return Response(payload, status=status.HTTP_201_CREATED)
+
         except IntegrityError:
             # Handles race condition if two requests try to create the same email concurrently
             return Response(
@@ -347,52 +186,12 @@ class RegisterDeveloperView(generics.GenericAPIView):
             )
 
 
-@extend_schema(
-    summary="Register broker",
-    description=(
-        "Registers a new user with role **broker** and creates a **Broker** profile.\n\n"
-        "Requirements:\n"
-        "- Email must be verified via OTP beforehand.\n"
-        "- Must upload `verification_document`.\n"
-        "- Broker is created with `is_verified=false` and `verification_status=pending`."
-    ),
-    request=RegisterBrokerSerializer,
-    responses={
-        201: OpenApiResponse(
-            response=RegisterResponseSerializer,
-            description="Broker registered.",
-            examples=[
-                OpenApiExample(
-                    "Created",
-                    value={
-                        "message": "Registration successful.",
-                        "user": {
-                            "id": 2,
-                            "email": "broker@example.com",
-                            "first_name": "Alice",
-                            "last_name": "Smith",
-                            "role": "broker",
-                        },
-                    },
-                )
-            ],
-        ),
-        400: OpenApiResponse(
-            response=ErrorResponseSerializer,
-            description="Validation error (e.g., email not verified, missing file).",
-        ),
-        409: OpenApiResponse(
-            response=ErrorResponseSerializer,
-            description="User already exists.",
-        ),
-    },
-    tags=["Auth"],
-)
 class RegisterBrokerView(generics.GenericAPIView):
     permission_classes = [AllowAny]
     serializer_class = RegisterBrokerSerializer
     parser_classes = [MultiPartParser, FormParser]
 
+    @register_broker_schema
     def post(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
