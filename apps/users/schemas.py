@@ -181,6 +181,9 @@ register_developer_schema = extend_schema(
                             "last_name": "Doe",
                             "role": "developer",
                             "broker": None,
+                            "developer": {
+                                "company_name": "Acme Inc"
+                            },
                         },
                     },
                 )
@@ -225,6 +228,7 @@ register_broker_schema = extend_schema(
                                 "verified_at": None,
                                 "verification_document_url": "http://host:7676/media/...",
                             },
+                            "developer": None,
                         },
                     },
                 )

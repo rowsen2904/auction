@@ -8,7 +8,7 @@ from rest_framework.response import Response
 from rest_framework_simplejwt.serializers import TokenRefreshSerializer
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
-from .models import Broker
+from .models import Broker, Developer
 from .schemas import (
     login_schema,
     refresh_schema,
@@ -160,6 +160,7 @@ class RegisterDeveloperView(generics.GenericAPIView):
         password = serializer.validated_data["password"]
         first_name = serializer.validated_data.get("first_name", "")
         last_name = serializer.validated_data.get("last_name", "")
+        company_name = serializer.validated_data.get("company_name", "")
 
         try:
             with transaction.atomic():
@@ -171,6 +172,14 @@ class RegisterDeveloperView(generics.GenericAPIView):
                     role=User.Roles.DEVELOPER,
                     is_active=True,
                 )
+
+                developer = Developer.objects.create(
+                    user=user,
+                    company_name=company_name
+                )
+
+                # Cache the relation on the user instance to avoid an extra DB query in serializer
+                user.developer = developer
 
             # One-time use of verified flag
             clear_email_verified_for_registration(email)

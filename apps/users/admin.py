@@ -5,7 +5,7 @@ from django.contrib.auth.admin import UserAdmin as DjangoUserAdmin
 from django.contrib.auth.forms import ReadOnlyPasswordHashField
 from django.utils.translation import gettext_lazy as _
 
-from .models import Broker
+from .models import Broker, Developer
 
 User = get_user_model()
 
@@ -76,6 +76,13 @@ class BrokerInline(admin.StackedInline):
     readonly_fields = ("verified_at",)
 
 
+class DeveloperInline(admin.StackedInline):
+    model = Developer
+    extra = 0
+    can_delete = True
+    fields = ("company_name")
+
+
 # Admins
 @admin.register(User)
 class UserAdmin(DjangoUserAdmin):
@@ -113,8 +120,12 @@ class UserAdmin(DjangoUserAdmin):
         """
         if obj is None:
             return []
-        if getattr(obj, "role", None) == getattr(User, "Roles").BROKER or hasattr(obj, "broker"):
+        
+        role = getattr(obj, "role", None)
+        if role == getattr(User, "Roles").BROKER or hasattr(obj, "broker"):
             return [BrokerInline]
+        elif role == getattr(User, "Roles").DEVELOPER or hasattr(obj, "developer"):
+            return [Developer]
         return []
 
 
@@ -123,4 +134,11 @@ class BrokerAdmin(admin.ModelAdmin):
     list_display = ("user", "is_verified", "verified_at")
     list_filter = ("is_verified",)
     search_fields = ("user__email", "user__first_name", "user__last_name")
+    autocomplete_fields = ("user",)
+
+
+@admin.register(Developer)
+class DeveloperAdmin(admin.ModelAdmin):
+    list_display = ("user", "company_name")
+    search_fields = ("user__email", "user__first_name", "user__last_name", "company_name")
     autocomplete_fields = ("user",)

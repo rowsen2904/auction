@@ -6,7 +6,7 @@ from rest_framework import serializers
 from rest_framework.exceptions import AuthenticationFailed
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
-from .models import Broker
+from .models import Broker, Developer
 from .utils import verify_code, is_email_verified_for_registration
 from auction.settings import EMAIL_VERIFICATION_CODE_LENGTH
 
@@ -25,6 +25,7 @@ class TokenUserSerializer(serializers.Serializer):
     )
 
     broker = serializers.SerializerMethodField()
+    developer = serializers.SerializerMethodField()
 
     def get_broker(self, obj):
         # Return broker fields only for broker users (or if broker exists)
@@ -32,6 +33,12 @@ class TokenUserSerializer(serializers.Serializer):
         if not broker:
             return None
         return BrokerInfoSerializer(broker, context=self.context).data
+    
+    def get_developer(self, obj):
+        developer = getattr(obj, "developer", None)
+        if not developer:
+            return None
+        return DeveloperInfoSerializer(developer, context=self.context).data
 
 
 class LoginSerializer(TokenObtainPairSerializer):
@@ -172,7 +179,7 @@ class RegisterDeveloperSerializer(BaseRegisterSerializer):
     Registers a developer user (role=developer).
     Email must be verified via OTP beforehand.
     """
-    pass
+    company_name = serializers.CharField(required=True)
 
 
 class RegisterBrokerSerializer(BaseRegisterSerializer):
@@ -208,6 +215,12 @@ class BrokerInfoSerializer(serializers.ModelSerializer):
             return None
         url = obj.verification_document.url
         return request.build_absolute_uri(url) if request else url
+
+
+class DeveloperInfoSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Developer
+        fields = ["company_name"]
 
 
 # --- Response serializers (nice Swagger) ---

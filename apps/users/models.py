@@ -154,3 +154,29 @@ class Broker(models.Model):
             self.user.role = User.Roles.BROKER
             self.user.save(update_fields=["role"])
         super().save(*args, **kwargs)
+
+
+class Developer(models.Model):
+    user = models.OneToOneField(
+        User,
+        on_delete=models.CASCADE,
+        related_name='developer'
+    )
+
+    company_name = models.CharField(
+        _('company name'),
+        max_length=55,
+    )
+
+    class Meta:
+        verbose_name = _("developer")
+        verbose_name_plural = _("developers")
+    
+    def __str__(self):
+        return '{}'.format(self.user.get_full_name())
+
+    def save(self, *args, **kwargs):
+        if self.user.role != User.Roles.DEVELOPER:
+            self.user.role = User.Roles.DEVELOPER
+            self.user.save(update_fields=["role"])
+        super().save(*args, **kwargs)
