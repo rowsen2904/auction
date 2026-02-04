@@ -56,6 +56,22 @@ class PropertyListCreateView(generics.ListCreateAPIView):
         return super().post(request, *args, **kwargs)
 
 
+class MyPropertiesView(generics.ListAPIView):
+    pagination_class = PropertyPagination
+    filterset_class = PropertyFilter
+    ordering_fields = ["price", "created_at", "deadline", "area"]
+    ordering = ["-created_at"]
+    permission_classes = [IsAuthenticated, IsDeveloper]
+    serializer_class = PropertyListSerializer
+
+    def get_queryset(self):
+        return (
+            Property.objects.select_related("owner")
+            .prefetch_related("images")
+            .filter(owner=self.request.user)
+        )
+
+
 class PropertyDetailView(generics.RetrieveUpdateAPIView):
     queryset = Property.objects.select_related("owner").prefetch_related("images")
     http_method_names = ["get", "patch", "head", "options"]
