@@ -232,6 +232,7 @@ register_broker_schema = extend_schema(
                             "broker": {
                                 "is_verified": False,
                                 "verification_status": "pending",
+                                "rejected_at": None,
                                 "verified_at": None,
                                 "inn_number": "772158104012",
                                 "inn_url": "http://host:7676/media/...",

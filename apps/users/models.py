@@ -127,6 +127,7 @@ class Broker(models.Model):
 
     is_verified = models.BooleanField(default=False, db_index=True)
     verified_at = models.DateTimeField(null=True, blank=True)
+    rejected_at = models.DateTimeField(null=True, blank=True)
     inn = models.FileField(upload_to=broker_inn_folder, null=True, blank=True)
     inn_number = models.CharField(max_length=12, validators=[validate_inn], unique=True)
     passport = models.FileField(upload_to=broker_passport_folder, null=True, blank=True)
@@ -153,6 +154,37 @@ class Broker(models.Model):
             self.user.role = User.Roles.BROKER
             self.user.save(update_fields=["role"])
         super().save(*args, **kwargs)
+
+    def verify_broker(self):
+        if not self.verification_status == self.VerificationStatuses.ACCEPTED:
+            self.verification_status = self.VerificationStatuses.ACCEPTED
+            self.is_verified = True
+            self.rejected_at = None
+            self.verified_at = timezone.now()
+            self.save(
+                update_fields=[
+                    "verification_status",
+                    "is_verified",
+                    "verified_at",
+                    "rejected_at",
+                ]
+            )
+
+    def set_as_rejected(self):
+        if not self.verification_status == self.VerificationStatuses.REJECTED:
+            # Reject broker and reset verification flags if needed
+            self.verification_status = self.VerificationStatuses.REJECTED
+            self.is_verified = False
+            self.rejected_at = timezone.now()
+            self.verified_at = None
+            self.save(
+                update_fields=[
+                    "verification_status",
+                    "is_verified",
+                    "verified_at",
+                    "rejected_at",
+                ]
+            )
 
 
 class Developer(models.Model):

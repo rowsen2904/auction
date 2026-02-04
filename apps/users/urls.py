@@ -1,6 +1,7 @@
 from django.urls import path
 
 from .views import (
+    BrokerVerificationView,
     CustomTokenRefreshView,
     GetVerificationCodeView,
     LoginView,
@@ -25,4 +26,9 @@ urlpatterns = [
         name="register-developer",
     ),
     path("register/broker/", RegisterBrokerView.as_view(), name="register-broker"),
+    path(
+        "verification/broker/",
+        BrokerVerificationView.as_view(),
+        name="broker-verification",
+    ),
 ]

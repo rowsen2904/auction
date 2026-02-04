@@ -1,9 +1,11 @@
 from django.contrib.auth import get_user_model
 from django.db import IntegrityError, transaction
+from django.shortcuts import get_object_or_404
 from django.utils.translation import gettext_lazy as _
 from rest_framework import generics, status
+from rest_framework.exceptions import ValidationError
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
-from rest_framework.permissions import AllowAny
+from rest_framework.permissions import AllowAny, IsAdminUser
 from rest_framework.response import Response
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
@@ -20,6 +22,7 @@ from .schemas import (
     verify_email_schema,
 )
 from .serializers import (
+    BrokerVerificationSerializer,
     EmailSerializer,
     LoginSerializer,
     RegisterBrokerSerializer,
@@ -246,3 +249,36 @@ class RegisterBrokerView(generics.GenericAPIView):
                 {"error": _("User already exists.")},
                 status=status.HTTP_409_CONFLICT,
             )
+
+
+class BrokerVerificationView(generics.GenericAPIView):
+    queryset = (
+        User.objects.select_related("broker")
+        .only("id", "role", "broker__id", "broker__verification_status")
+        .filter(role=User.Roles.BROKER)
+    )
+    serializer_class = BrokerVerificationSerializer
+    permission_classes = [IsAdminUser]
+
+    def post(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        user_id = serializer.validated_data["id"]
+        action = serializer.validated_data["action"]
+
+        user = get_object_or_404(self.get_queryset(), id=user_id)
+
+        broker = getattr(user, "broker", None)
+        if broker is None:
+            # Broker profile missing even though role is broker
+            raise ValidationError({"id": _("Broker profile not found for this user.")})
+
+        if action == "accept":
+            broker.verify_broker()
+            msg = _("Broker has been successfully verified.")
+        else:
+            broker.set_as_rejected()
+            msg = _("Broker has been rejected.")
+
+        return Response({"message": msg}, status=status.HTTP_200_OK)
