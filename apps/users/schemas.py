@@ -1,6 +1,5 @@
 from django.utils.translation import gettext_lazy as _
 from drf_spectacular.utils import extend_schema, OpenApiResponse, OpenApiExample
-
 from rest_framework_simplejwt.serializers import TokenRefreshSerializer
 
 from .serializers import (
@@ -40,14 +39,16 @@ REGISTER_DEVELOPER_DOC = (
     "Registers a new user with role **developer**.\n\n"
     "Requirements:\n"
     "- Email must be verified via OTP beforehand.\n"
-    "- Admin role cannot be selected."
+    "- Admin role cannot be selected.\n"
+    "- `company_name` is required."
 )
 
 REGISTER_BROKER_DOC = (
     "Registers a new user with role **broker** and creates a **Broker** profile.\n\n"
     "Requirements:\n"
     "- Email must be verified via OTP beforehand.\n"
-    "- Must upload `passport`.\n"
+    "- Must provide `inn_number`.\n"
+    "- Must upload `inn` and `passport`.\n"
     "- Broker is created with `is_verified=false` and `verification_status=pending`."
 )
 
@@ -182,7 +183,7 @@ register_developer_schema = extend_schema(
                             "role": "developer",
                             "broker": None,
                             "developer": {
-                                "company_name": "Acme Inc"
+                                "company_name": "Acme Inc",
                             },
                         },
                     },
@@ -226,6 +227,8 @@ register_broker_schema = extend_schema(
                                 "is_verified": False,
                                 "verification_status": "pending",
                                 "verified_at": None,
+                                "inn_number": "772158104012",
+                                "inn_url": "http://host:7676/media/...",
                                 "passport_url": "http://host:7676/media/...",
                             },
                             "developer": None,
@@ -236,7 +239,7 @@ register_broker_schema = extend_schema(
         ),
         400: OpenApiResponse(
             response=ErrorResponseSerializer,
-            description="Validation error (e.g., email not verified, missing file).",
+            description="Validation error (e.g., email not verified, missing files, invalid INN).",
         ),
         409: OpenApiResponse(
             response=ErrorResponseSerializer,
