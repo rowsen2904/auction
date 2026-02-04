@@ -1,37 +1,38 @@
 from django.contrib.auth import get_user_model
-from django.db import transaction, IntegrityError
+from django.db import IntegrityError, transaction
 from django.utils.translation import gettext_lazy as _
 from rest_framework import generics, status
-from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
+from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
+from helpers.utils import get_client_ip
+
 from .models import Broker, Developer
 from .schemas import (
+    get_verification_code_schema,
     login_schema,
     refresh_schema,
-    get_verification_code_schema,
-    verify_email_schema,
-    resend_code_schema,
-    register_developer_schema,
     register_broker_schema,
+    register_developer_schema,
+    resend_code_schema,
+    verify_email_schema,
 )
 from .serializers import (
-    LoginSerializer,
     EmailSerializer,
-    VerifyEmailSerializer,
+    LoginSerializer,
     RegisterBrokerSerializer,
     RegisterDeveloperSerializer,
     RegisterResponseSerializer,
+    VerifyEmailSerializer,
 )
 from .utils import (
-    email_rate_limiter,
-    send_verification_email_to,
-    mark_email_verified_for_registration,
     clear_email_verified_for_registration,
+    email_rate_limiter,
+    mark_email_verified_for_registration,
+    send_verification_email_to,
 )
-from helpers.utils import get_client_ip
 
 User = get_user_model()
 
@@ -137,7 +138,9 @@ class ResendCodeView(generics.GenericAPIView):
 
         try:
             send_verification_email_to(email, client_ip)
-            return Response({"message": "New code sent to your email."}, status=status.HTTP_200_OK)
+            return Response(
+                {"message": "New code sent to your email."}, status=status.HTTP_200_OK
+            )
         except Exception:
             return Response(
                 {"error": "Failed to send email. Please try again later."},
@@ -173,8 +176,7 @@ class RegisterDeveloperView(generics.GenericAPIView):
                 )
 
                 developer = Developer.objects.create(
-                    user=user,
-                    company_name=company_name
+                    user=user, company_name=company_name
                 )
 
                 # Cache the relation on the user instance to avoid an extra DB query in serializer

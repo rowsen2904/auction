@@ -1,18 +1,18 @@
 from django.utils.translation import gettext_lazy as _
-from drf_spectacular.utils import extend_schema, OpenApiResponse, OpenApiExample
+from drf_spectacular.utils import OpenApiExample, OpenApiResponse, extend_schema
 from rest_framework_simplejwt.serializers import TokenRefreshSerializer
 
 from .serializers import (
-    LoginSerializer,
     EmailSerializer,
-    VerifyEmailSerializer,
+    ErrorResponseSerializer,
+    LoginSerializer,
     MessageEmailResponseSerializer,
     MessageResponseSerializer,
     RateLimitResponseSerializer,
-    ErrorResponseSerializer,
     RegisterBrokerSerializer,
     RegisterDeveloperSerializer,
     RegisterResponseSerializer,
+    VerifyEmailSerializer,
 )
 
 LOGIN_DOC = _("Obtain JWT token pair.")
@@ -77,7 +77,10 @@ get_verification_code_schema = extend_schema(
             examples=[
                 OpenApiExample(
                     "Success",
-                    value={"message": "Verification code sent to your email.", "email": "user@example.com"},
+                    value={
+                        "message": "Verification code sent to your email.",
+                        "email": "user@example.com",
+                    },
                 )
             ],
         ),
@@ -120,7 +123,10 @@ verify_email_schema = extend_schema(
             examples=[
                 OpenApiExample(
                     "Verified",
-                    value={"message": "Email verified successfully.", "email": "user@example.com"},
+                    value={
+                        "message": "Email verified successfully.",
+                        "email": "user@example.com",
+                    },
                 )
             ],
         ),

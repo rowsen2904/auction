@@ -1,10 +1,8 @@
-# auction/settings/test.py
-
 import os
 from datetime import timedelta
 
-from .base import *  # noqa
-
+from .base import *  # noqa: F401,F403
+from .base import BASE_DIR, INSTALLED_APPS, MIDDLEWARE
 
 # -----------------------------
 # Core
@@ -80,4 +78,6 @@ STATIC_ROOT = os.path.join(BASE_DIR, "test_staticfiles")
 # -----------------------------
 # If dev/prod accidentally add it, remove it explicitly.
 INSTALLED_APPS = [app for app in INSTALLED_APPS if app != "debug_toolbar"]
-MIDDLEWARE = [mw for mw in MIDDLEWARE if mw != "debug_toolbar.middleware.DebugToolbarMiddleware"]
+MIDDLEWARE = [
+    mw for mw in MIDDLEWARE if mw != "debug_toolbar.middleware.DebugToolbarMiddleware"
+]

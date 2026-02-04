@@ -6,6 +6,7 @@ def _checksum(digits: list[int], weights: list[int]) -> int:
     # Control digit algorithm: ((sum(d_i * w_i) % 11) % 10)
     return (sum(d * w for d, w in zip(digits, weights)) % 11) % 10
 
+
 def validate_inn(value: str) -> None:
     """
     Validates Russian INN:
@@ -33,7 +34,9 @@ def validate_inn(value: str) -> None:
         raise ValidationError(_("Invalid INN: region code is out of range (01..99)."))
 
     if not (1 <= tax_office_code <= 99):
-        raise ValidationError(_("Invalid INN: tax office code is out of range (01..99)."))
+        raise ValidationError(
+            _("Invalid INN: tax office code is out of range (01..99).")
+        )
 
     digits = list(map(int, inn))
 

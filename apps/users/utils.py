@@ -54,7 +54,7 @@ class EmailRateLimiter:
                     return RateLimitResult(
                         allowed=False,
                         remaining_time=remaining,
-                        message=f"Please wait {remaining} seconds before requesting another code."
+                        message=f"Please wait {remaining} seconds before requesting another code.",
                     )
 
             email_last_send = cache.get(email_key)
@@ -64,7 +64,10 @@ class EmailRateLimiter:
                     return RateLimitResult(
                         allowed=False,
                         remaining_time=remaining,
-                        message=f"Please wait {remaining} seconds before requesting another code for this email."
+                        message=(
+                            f"Please wait {remaining} seconds before requesting another code "
+                            "for this email."
+                        ),
                     )
 
             combined_last_send = cache.get(combined_key)
@@ -74,7 +77,7 @@ class EmailRateLimiter:
                     return RateLimitResult(
                         allowed=False,
                         remaining_time=remaining,
-                        message=f"Please wait {remaining} seconds before requesting another code."
+                        message=f"Please wait {remaining} seconds before requesting another code.",
                     )
 
             return RateLimitResult(allowed=True)
@@ -114,8 +117,7 @@ def generate_code(length: int) -> str:
 def send_verification_email_to(email: str, ip_address: Optional[str] = None) -> str:
     email = norm_email(email)
     code_len = getattr(settings, "EMAIL_VERIFICATION_CODE_LENGTH", 6)
-    expiry_seconds = getattr(
-        settings, "EMAIL_VERIFICATION_CODE_EXPIRY", 15 * 60)
+    expiry_seconds = getattr(settings, "EMAIL_VERIFICATION_CODE_EXPIRY", 15 * 60)
     code = generate_code(code_len)
     cache_key = get_verification_key(email)
     cache.set(cache_key, code, expiry_seconds)
@@ -159,18 +161,22 @@ send_verification_email = send_verification_email_to
 
 # Registration utils
 
+
 def get_registration_verified_key(email: str) -> str:
     return f"email_registration_verified:{norm_email(email)}"
 
 
-def mark_email_verified_for_registration(email: str, ttl_seconds: Optional[int] = None) -> None:
+def mark_email_verified_for_registration(
+    email: str, ttl_seconds: Optional[int] = None
+) -> None:
     """
     Marks an email as verified for registration for a limited time window.
     This is separate from the OTP code itself (OTP gets deleted on successful verification).
     """
     if ttl_seconds is None:
         ttl_seconds = getattr(
-            settings, "EMAIL_REGISTRATION_VERIFIED_TTL", 30 * 60)  # 30 min default
+            settings, "EMAIL_REGISTRATION_VERIFIED_TTL", 30 * 60
+        )  # 30 min default
     cache.set(get_registration_verified_key(email), True, ttl_seconds)
 
 

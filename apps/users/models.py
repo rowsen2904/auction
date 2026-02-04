@@ -1,7 +1,11 @@
 import os
 from uuid import uuid4
 
-from django.contrib.auth.models import AbstractBaseUser, PermissionsMixin, BaseUserManager
+from django.contrib.auth.models import (
+    AbstractBaseUser,
+    BaseUserManager,
+    PermissionsMixin,
+)
 from django.db import models
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
@@ -60,29 +64,21 @@ class UserManager(BaseUserManager):
 
 class User(AbstractBaseUser, PermissionsMixin):
     class Roles(models.TextChoices):
-        DEVELOPER = 'developer', _('Developer')
-        BROKER = 'broker', _('Broker')
-        ADMIN = 'admin', _('Admin')
+        DEVELOPER = "developer", _("Developer")
+        BROKER = "broker", _("Broker")
+        ADMIN = "admin", _("Admin")
 
     email = models.EmailField(_("email address"), unique=True)
 
-    first_name = models.CharField(
-        _("first name"),
-        max_length=150,
-        blank=True
-    )
-    last_name = models.CharField(
-        _("last name"),
-        max_length=150,
-        blank=True
-    )
+    first_name = models.CharField(_("first name"), max_length=150, blank=True)
+    last_name = models.CharField(_("last name"), max_length=150, blank=True)
 
     role = models.CharField(
         _("role"),
         max_length=20,
         choices=Roles.choices,
         default=Roles.DEVELOPER,
-        db_index=True
+        db_index=True,
     )
 
     is_staff = models.BooleanField(default=False)
@@ -123,39 +119,23 @@ class User(AbstractBaseUser, PermissionsMixin):
 
 class Broker(models.Model):
     class VerificationStatuses(models.TextChoices):
-        PENDING = 'pending', _('Pending')
-        ACCEPTED = 'accepted', _('Accepted')
-        REJECTED = 'rejected', _('Rejected')
+        PENDING = "pending", _("Pending")
+        ACCEPTED = "accepted", _("Accepted")
+        REJECTED = "rejected", _("Rejected")
 
-    user = models.OneToOneField(
-        User,
-        on_delete=models.CASCADE,
-        related_name='broker'
-    )
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name="broker")
 
     is_verified = models.BooleanField(default=False, db_index=True)
     verified_at = models.DateTimeField(null=True, blank=True)
-    inn = models.FileField(
-        upload_to=broker_inn_folder,
-        null=True,
-        blank=True
-    )
-    inn_number = models.CharField(
-        max_length=12,
-        validators=[validate_inn],
-        unique=True
-    )
-    passport = models.FileField(
-        upload_to=broker_passport_folder,
-        null=True,
-        blank=True
-    )
+    inn = models.FileField(upload_to=broker_inn_folder, null=True, blank=True)
+    inn_number = models.CharField(max_length=12, validators=[validate_inn], unique=True)
+    passport = models.FileField(upload_to=broker_passport_folder, null=True, blank=True)
     verification_status = models.CharField(
-        _('verification status'),
+        _("verification status"),
         max_length=20,
         choices=VerificationStatuses.choices,
         default=VerificationStatuses.PENDING,
-        db_index=True
+        db_index=True,
     )
 
     class Meta:
@@ -166,7 +146,7 @@ class Broker(models.Model):
         ]
 
     def __str__(self):
-        return '{}'.format(self.user.get_full_name())
+        return "{}".format(self.user.get_full_name())
 
     def save(self, *args, **kwargs):
         if self.user.role != User.Roles.BROKER:
@@ -177,13 +157,11 @@ class Broker(models.Model):
 
 class Developer(models.Model):
     user = models.OneToOneField(
-        User,
-        on_delete=models.CASCADE,
-        related_name='developer'
+        User, on_delete=models.CASCADE, related_name="developer"
     )
 
     company_name = models.CharField(
-        _('company name'),
+        _("company name"),
         max_length=55,
     )
 
@@ -192,7 +170,7 @@ class Developer(models.Model):
         verbose_name_plural = _("developers")
 
     def __str__(self):
-        return '{}'.format(self.user.get_full_name())
+        return "{}".format(self.user.get_full_name())
 
     def save(self, *args, **kwargs):
         if self.user.role != User.Roles.DEVELOPER:

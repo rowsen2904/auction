@@ -1,18 +1,17 @@
 import tempfile
 from unittest.mock import patch
 
+from django.contrib.auth import get_user_model
 from django.core.cache import cache
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import override_settings
 from rest_framework import status
 from rest_framework.test import APITestCase
 
-from django.contrib.auth import get_user_model
-
 from apps.users.models import Broker, Developer
 from apps.users.utils import (
-    get_verification_key,
     get_registration_verified_key,
+    get_verification_key,
 )
 
 User = get_user_model()
@@ -109,7 +108,9 @@ class TestAuthOTPFlow(APITestCase):
         email = "verify@example.com"
 
         with patch("apps.users.views.get_client_ip", return_value="1.2.3.4"):
-            r1 = self.client.post(f"{BASE}/get-code/", data={"email": email}, format="json")
+            r1 = self.client.post(
+                f"{BASE}/get-code/", data={"email": email}, format="json"
+            )
             self.assertEqual(r1.status_code, status.HTTP_200_OK)
 
         otp = cache.get(get_verification_key(email))
@@ -155,7 +156,9 @@ class TestRegistrationFlow(APITestCase):
 
     def _verify_email_for_registration(self, email: str):
         with patch("apps.users.views.get_client_ip", return_value="1.2.3.4"):
-            r1 = self.client.post(f"{BASE}/get-code/", data={"email": email}, format="json")
+            r1 = self.client.post(
+                f"{BASE}/get-code/", data={"email": email}, format="json"
+            )
             self.assertEqual(r1.status_code, status.HTTP_200_OK)
 
         otp = cache.get(get_verification_key(email))
@@ -322,14 +325,16 @@ class TestRegistrationFlow(APITestCase):
         user = User.objects.get(email=email)
         broker = Broker.objects.get(user=user)
         self.assertFalse(broker.is_verified)
-        self.assertEqual(broker.verification_status, Broker.VerificationStatuses.PENDING)
+        self.assertEqual(
+            broker.verification_status, Broker.VerificationStatuses.PENDING
+        )
         self.assertEqual(broker.inn_number, inn_number)
         self.assertTrue(broker.passport.name)
         self.assertTrue(broker.inn.name)
 
         # Verified flag cleared after registration
         self.assertFalse(cache.get(get_registration_verified_key(email)))
-    
+
     def test_register_broker_invalid_inn_returns_400(self):
         # Should return 400 when INN checksum is invalid
         email = "broker_bad_inn@example.com"
@@ -386,7 +391,9 @@ class TestLoginAndRefresh(APITestCase):
     def test_login_success_returns_tokens_and_user(self):
         email = "login@example.com"
         password = "StrongPass123!"
-        user = User.objects.create_user(email=email, password=password, role=User.Roles.DEVELOPER)
+        user = User.objects.create_user(
+            email=email, password=password, role=User.Roles.DEVELOPER
+        )
 
         resp = self.client.post(
             f"{BASE}/login/",
@@ -401,7 +408,9 @@ class TestLoginAndRefresh(APITestCase):
 
     def test_login_invalid_password(self):
         email = "login2@example.com"
-        User.objects.create_user(email=email, password="StrongPass123!", role=User.Roles.DEVELOPER)
+        User.objects.create_user(
+            email=email, password="StrongPass123!", role=User.Roles.DEVELOPER
+        )
 
         resp = self.client.post(
             f"{BASE}/login/",
@@ -413,7 +422,9 @@ class TestLoginAndRefresh(APITestCase):
     def test_refresh_returns_new_access(self):
         email = "refresh@example.com"
         password = "StrongPass123!"
-        User.objects.create_user(email=email, password=password, role=User.Roles.DEVELOPER)
+        User.objects.create_user(
+            email=email, password=password, role=User.Roles.DEVELOPER
+        )
 
         login = self.client.post(
             f"{BASE}/login/",

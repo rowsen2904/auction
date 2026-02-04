@@ -6,11 +6,12 @@ from rest_framework import serializers
 from rest_framework.exceptions import AuthenticationFailed
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
-from .models import Broker, Developer
-from .utils import verify_code, is_email_verified_for_registration
-from .validators import validate_inn
 from auction.settings import EMAIL_VERIFICATION_CODE_LENGTH
 from helpers.validators import FileSizeValidationMixin
+
+from .models import Broker, Developer
+from .utils import is_email_verified_for_registration, verify_code
+from .validators import validate_inn
 
 User = get_user_model()
 
@@ -20,11 +21,7 @@ class TokenUserSerializer(serializers.Serializer):
     email = serializers.EmailField(read_only=True)
     first_name = serializers.CharField(read_only=True)
     last_name = serializers.CharField(read_only=True)
-    role = serializers.CharField(
-        allow_null=True,
-        required=False,
-        read_only=True
-    )
+    role = serializers.CharField(allow_null=True, required=False, read_only=True)
 
     broker = serializers.SerializerMethodField()
     developer = serializers.SerializerMethodField()
@@ -35,7 +32,7 @@ class TokenUserSerializer(serializers.Serializer):
         if not broker:
             return None
         return BrokerInfoSerializer(broker, context=self.context).data
-    
+
     def get_developer(self, obj):
         developer = getattr(obj, "developer", None)
         if not developer:
@@ -61,15 +58,13 @@ class LoginSerializer(TokenObtainPairSerializer):
 
         if not identifier or not password:
             raise AuthenticationFailed(
-                _("Please provide credentials."),
-                code="missing_credentials"
+                _("Please provide credentials."), code="missing_credentials"
             )
 
-        if not User._default_manager.filter(**{self.username_field: identifier}).exists():
-            raise AuthenticationFailed(
-                _("User not found."),
-                code="user_not_found"
-            )
+        if not User._default_manager.filter(
+            **{self.username_field: identifier}
+        ).exists():
+            raise AuthenticationFailed(_("User not found."), code="user_not_found")
 
         user = authenticate(
             request=self.context.get("request"),
@@ -77,8 +72,7 @@ class LoginSerializer(TokenObtainPairSerializer):
         )
         if user is None:
             raise AuthenticationFailed(
-                _("Invalid credentials."),
-                code="invalid_credentials"
+                _("Invalid credentials."), code="invalid_credentials"
             )
 
         refresh = self.get_token(user)
@@ -92,6 +86,7 @@ class LoginSerializer(TokenObtainPairSerializer):
 
 class EmailSerializer(serializers.Serializer):
     """Email input serializer."""
+
     email = serializers.EmailField()
 
 
@@ -103,18 +98,18 @@ class VerifyEmailSerializer(serializers.Serializer):
     - No user creation
     - Only validates the OTP
     """
+
     email = serializers.EmailField()
     code = serializers.CharField(
         max_length=EMAIL_VERIFICATION_CODE_LENGTH,
         min_length=EMAIL_VERIFICATION_CODE_LENGTH,
         required=True,
-        help_text=f"{EMAIL_VERIFICATION_CODE_LENGTH}-digit OTP code"
+        help_text=f"{EMAIL_VERIFICATION_CODE_LENGTH}-digit OTP code",
     )
 
     def validate(self, data):
         if not verify_code(data["email"], data["code"]):
-            raise serializers.ValidationError(
-                {"code": "Invalid or expired code"})
+            raise serializers.ValidationError({"code": "Invalid or expired code"})
         return data
 
 
@@ -137,21 +132,21 @@ class BaseRegisterSerializer(serializers.Serializer):
         style={"input_type": "password"},
     )
 
-    first_name = serializers.CharField(
-        required=False, allow_blank=True, max_length=150)
-    last_name = serializers.CharField(
-        required=False, allow_blank=True, max_length=150)
+    first_name = serializers.CharField(required=False, allow_blank=True, max_length=150)
+    last_name = serializers.CharField(required=False, allow_blank=True, max_length=150)
 
     def validate_email(self, value: str) -> str:
         email = value.strip().lower()
 
         if not is_email_verified_for_registration(email):
             raise serializers.ValidationError(
-                _("Email is not verified."), code="email_not_verified")
+                _("Email is not verified."), code="email_not_verified"
+            )
 
         if User.objects.filter(email=email).exists():
             raise serializers.ValidationError(
-                _("User already exists."), code="email_already_registered")
+                _("User already exists."), code="email_already_registered"
+            )
 
         return email
 
@@ -171,7 +166,8 @@ class BaseRegisterSerializer(serializers.Serializer):
         except DjangoValidationError as e:
             # e.messages is a list of validator messages
             raise serializers.ValidationError(
-                {"password": e.messages}, code="password_invalid")
+                {"password": e.messages}, code="password_invalid"
+            )
 
         return attrs
 
@@ -181,13 +177,14 @@ class RegisterBrokerSerializer(FileSizeValidationMixin, BaseRegisterSerializer):
     Registers a broker user (role=broker) and creates Broker profile.
     Requires passport upload.
     """
+
     inn = serializers.FileField(required=True)
     inn_number = serializers.IntegerField(required=True)
     passport = serializers.FileField(required=True)
 
     def validate_inn(self, file):
         return self._validate_file_size(file, "inn")
-    
+
     def validate_inn_number(self, value: str) -> str:
         validate_inn(value)
         return value
@@ -231,6 +228,7 @@ class RegisterDeveloperSerializer(BaseRegisterSerializer):
     Registers a developer user (role=developer).
     Email must be verified via OTP beforehand.
     """
+
     company_name = serializers.CharField(required=True)
 
 
@@ -241,6 +239,7 @@ class DeveloperInfoSerializer(serializers.ModelSerializer):
 
 
 # --- Response serializers (nice Swagger) ---
+
 
 class MessageEmailResponseSerializer(serializers.Serializer):
     message = serializers.CharField()

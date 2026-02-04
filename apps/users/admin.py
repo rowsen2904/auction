@@ -16,10 +16,11 @@ class UserCreationForm(forms.ModelForm):
     """
     User creation form for the admin (with password confirmation).
     """
-    password1 = forms.CharField(
-        label=_("Password"), widget=forms.PasswordInput)
+
+    password1 = forms.CharField(label=_("Password"), widget=forms.PasswordInput)
     password2 = forms.CharField(
-        label=_("Password confirmation"), widget=forms.PasswordInput)
+        label=_("Password confirmation"), widget=forms.PasswordInput
+    )
 
     class Meta:
         model = User
@@ -45,10 +46,12 @@ class UserChangeForm(forms.ModelForm):
     User edit form for the admin.
     The password is shown as a hashed readonly field.
     """
+
     password = ReadOnlyPasswordHashField(
         label=_("Password"),
         help_text=_(
-            "Raw passwords are not stored, so there is no way to see this user's password.")
+            "Raw passwords are not stored, so there is no way to see this user's password."
+        ),
     )
 
     class Meta:
@@ -80,7 +83,7 @@ class DeveloperInline(admin.StackedInline):
     model = Developer
     extra = 0
     can_delete = True
-    fields = ("company_name")
+    fields = "company_name"
 
 
 # Admins
@@ -90,8 +93,15 @@ class UserAdmin(DjangoUserAdmin):
     form = UserChangeForm
     model = User
 
-    list_display = ("email", "first_name", "last_name", "role",
-                    "is_staff", "is_active", "date_joined")
+    list_display = (
+        "email",
+        "first_name",
+        "last_name",
+        "role",
+        "is_staff",
+        "is_active",
+        "date_joined",
+    )
     list_filter = ("role", "is_staff", "is_active", "is_superuser")
     search_fields = ("email", "first_name", "last_name")
     ordering = ("email",)
@@ -100,16 +110,39 @@ class UserAdmin(DjangoUserAdmin):
     fieldsets = (
         (None, {"fields": ("email", "password")}),
         (_("Personal info"), {"fields": ("first_name", "last_name", "role")}),
-        (_("Permissions"), {"fields": ("is_active", "is_staff",
-         "is_superuser", "groups", "user_permissions")}),
+        (
+            _("Permissions"),
+            {
+                "fields": (
+                    "is_active",
+                    "is_staff",
+                    "is_superuser",
+                    "groups",
+                    "user_permissions",
+                )
+            },
+        ),
         (_("Important dates"), {"fields": ("last_login", "date_joined")}),
     )
 
     add_fieldsets = (
-        (None, {
-            "classes": ("wide",),
-            "fields": ("email", "first_name", "last_name", "role", "password1", "password2", "is_staff", "is_superuser", "is_active"),
-        }),
+        (
+            None,
+            {
+                "classes": ("wide",),
+                "fields": (
+                    "email",
+                    "first_name",
+                    "last_name",
+                    "role",
+                    "password1",
+                    "password2",
+                    "is_staff",
+                    "is_superuser",
+                    "is_active",
+                ),
+            },
+        ),
     )
 
     def get_inlines(self, request, obj=None):
@@ -120,7 +153,7 @@ class UserAdmin(DjangoUserAdmin):
         """
         if obj is None:
             return []
-        
+
         role = getattr(obj, "role", None)
         if role == getattr(User, "Roles").BROKER or hasattr(obj, "broker"):
             return [BrokerInline]
@@ -140,5 +173,10 @@ class BrokerAdmin(admin.ModelAdmin):
 @admin.register(Developer)
 class DeveloperAdmin(admin.ModelAdmin):
     list_display = ("user", "company_name")
-    search_fields = ("user__email", "user__first_name", "user__last_name", "company_name")
+    search_fields = (
+        "user__email",
+        "user__first_name",
+        "user__last_name",
+        "company_name",
+    )
     autocomplete_fields = ("user",)

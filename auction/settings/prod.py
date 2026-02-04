@@ -1,10 +1,10 @@
-from .base import *
+from .base import *  # noqa
 
 DEBUG = False
 
 ALLOWED_HOSTS = [
-    'backend.ochiapp.com',
-    'www.backend.ochiapp.com',
+    "backend.ochiapp.com",
+    "www.backend.ochiapp.com",
 ]
 
 CORS_ALLOWED_ORIGINS = []
@@ -16,4 +16,4 @@ SECURE_HSTS_INCLUDE_SUBDOMAINS = True
 SECURE_HSTS_PRELOAD = True
 SECURE_CONTENT_TYPE_NOSNIFF = True
 SECURE_BROWSER_XSS_FILTER = True
-SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
