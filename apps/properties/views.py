@@ -10,6 +10,7 @@ from .models import Property, PropertyImage
 from .pagination import PropertyPagination
 from .permissions import IsDeveloper, IsPropertyOwner
 from .schemas import (
+    my_properties_list_schema,
     properties_create_schema,
     properties_list_schema,
     property_detail_schema,
@@ -70,6 +71,10 @@ class MyPropertiesView(generics.ListAPIView):
             .prefetch_related("images")
             .filter(owner=self.request.user)
         )
+
+    @my_properties_list_schema
+    def get(self, request, *args, **kwargs):
+        return super().get(request, *args, **kwargs)
 
 
 class PropertyDetailView(generics.RetrieveUpdateAPIView):

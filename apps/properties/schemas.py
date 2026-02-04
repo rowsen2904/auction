@@ -49,6 +49,11 @@ PROPERTIES_LIST_DOC = _(
     "- `ordering` (e.g. `-created_at`, `price`, `area`)\n"
 )
 
+MY_PROPERTIES_LIST_DOC = (
+    "Returns a paginated list of properties owned by the authenticated developer."
+)
+
+
 PROPERTIES_CREATE_DOC = _(
     "Creates a new property.\n\n"
     "**Only users with role `developer` can create properties.**\n"
@@ -191,6 +196,112 @@ properties_list_schema = extend_schema(
     ],
     tags=["Properties"],
 )
+
+my_properties_list_schema = extend_schema(
+    summary="List my properties",
+    description=MY_PROPERTIES_LIST_DOC,
+    responses={
+        200: OpenApiResponse(
+            # ВАЖНО: это paginated response, поэтому example c count/results
+            response=PropertyListSerializer,  # spectacular сам обернёт в пагинацию для ListAPIView
+            description="Paginated list of the authenticated developer's properties.",
+            examples=[
+                OpenApiExample(
+                    "My properties list example",
+                    value={
+                        "count": 1,
+                        "next": None,
+                        "previous": None,
+                        "results": [
+                            {
+                                "id": 1,
+                                "developer": 10,
+                                "type": "apartment",
+                                "address": "Moscow, Tverskaya 1",
+                                "area": "52.50",
+                                "property_class": "comfort",
+                                "price": "12000000.00",
+                                "currency": "RUB",
+                                "deadline": "2026-10-01",
+                                "status": "published",
+                                "images": [],
+                                "created_at": "2026-02-04T06:00:00Z",
+                                "updated_at": "2026-02-04T06:00:00Z",
+                            }
+                        ],
+                    },
+                )
+            ],
+        ),
+        401: OpenApiResponse(description="Unauthorized."),
+        403: OpenApiResponse(description="Forbidden (not a developer)."),
+    },
+    parameters=[
+        OpenApiParameter(
+            "page", OpenApiTypes.INT, required=False, location=OpenApiParameter.QUERY
+        ),
+        OpenApiParameter(
+            "page_size",
+            OpenApiTypes.INT,
+            required=False,
+            location=OpenApiParameter.QUERY,
+        ),
+        OpenApiParameter(
+            "type", OpenApiTypes.STR, required=False, location=OpenApiParameter.QUERY
+        ),
+        OpenApiParameter(
+            "property_class",
+            OpenApiTypes.STR,
+            required=False,
+            location=OpenApiParameter.QUERY,
+        ),
+        OpenApiParameter(
+            "status", OpenApiTypes.STR, required=False, location=OpenApiParameter.QUERY
+        ),
+        OpenApiParameter(
+            "currency",
+            OpenApiTypes.STR,
+            required=False,
+            location=OpenApiParameter.QUERY,
+        ),
+        OpenApiParameter(
+            "address", OpenApiTypes.STR, required=False, location=OpenApiParameter.QUERY
+        ),
+        OpenApiParameter(
+            "price_min",
+            OpenApiTypes.NUMBER,
+            required=False,
+            location=OpenApiParameter.QUERY,
+        ),
+        OpenApiParameter(
+            "price_max",
+            OpenApiTypes.NUMBER,
+            required=False,
+            location=OpenApiParameter.QUERY,
+        ),
+        OpenApiParameter(
+            "area_min",
+            OpenApiTypes.NUMBER,
+            required=False,
+            location=OpenApiParameter.QUERY,
+        ),
+        OpenApiParameter(
+            "area_max",
+            OpenApiTypes.NUMBER,
+            required=False,
+            location=OpenApiParameter.QUERY,
+        ),
+        OpenApiParameter(
+            "ordering",
+            OpenApiTypes.STR,
+            required=False,
+            location=OpenApiParameter.QUERY,
+            description="Example: `-created_at`, `price`, `area`, `deadline`",
+        ),
+    ],
+    tags=["Properties"],
+)
+
 
 properties_create_schema = extend_schema(
     summary="Create property",
