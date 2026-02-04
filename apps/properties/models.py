@@ -1,0 +1,153 @@
+# apps/properties/models.py
+
+from __future__ import annotations
+
+from decimal import Decimal
+from uuid import uuid4
+
+from django.conf import settings
+from django.core.validators import MinValueValidator
+from django.db import models
+from django.db.models import Q
+from django.utils import timezone
+from django.utils.translation import gettext_lazy as _
+
+
+def property_image_upload_to(instance: "PropertyImage", filename: str) -> str:
+    ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else "bin"
+    owner_id = instance.property.owner_id or "unknown"
+    prop_id = instance.property_id or "tmp"
+    return f"developers/{owner_id}/properties/{prop_id}/{uuid4().hex}.{ext}"
+
+
+class Property(models.Model):
+    class PropertyTypes(models.TextChoices):
+        APARTMENT = "apartment", _("Apartment")
+        HOUSE = "house", _("House")
+        TOWNHOUSE = "townhouse", _("Townhouse")
+        COMMERCIAL = "commercial", _("Commercial")
+        LAND = "land", _("Land")
+
+    class PropertyClasses(models.TextChoices):
+        ECONOMY = "economy", _("Economy")
+        COMFORT = "comfort", _("Comfort")
+        BUSINESS = "business", _("Business")
+        PREMIUM = "premium", _("Premium")
+
+    class PropertyStatuses(models.TextChoices):
+        DRAFT = "draft", _("Draft")
+        PUBLISHED = "published", _("Published")
+        ARCHIVED = "archived", _("Archived")
+
+    owner = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="properties",
+        db_index=True,
+    )
+
+    type = models.CharField(
+        max_length=32,
+        choices=PropertyTypes.choices,
+        db_index=True,
+    )
+
+    address = models.CharField(max_length=255, unique=True)
+
+    area = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        validators=[MinValueValidator(Decimal("0.01"))],
+        db_index=True,
+    )
+
+    property_class = models.CharField(
+        max_length=32,
+        choices=PropertyClasses.choices,
+        db_index=True,
+    )
+
+    price = models.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+        validators=[MinValueValidator(Decimal("0.00"))],
+        db_index=True,
+    )
+    currency = models.CharField(max_length=3, default="RUB")
+
+    deadline = models.DateField(null=True, blank=True, db_index=True)
+
+    status = models.CharField(
+        max_length=16,
+        choices=PropertyStatuses.choices,
+        default=PropertyStatuses.DRAFT,
+        db_index=True,
+    )
+
+    created_at = models.DateTimeField(default=timezone.now, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = _("property")
+        verbose_name_plural = _("properties")
+        indexes = [
+            models.Index(
+                fields=["owner", "-created_at"], name="prop_owner_created_idx"
+            ),
+            models.Index(fields=["type", "price"], name="prop_type_price_idx"),
+            models.Index(
+                fields=["status", "-created_at"], name="prop_status_created_idx"
+            ),
+        ]
+        constraints = [
+            models.CheckConstraint(check=Q(area__gt=0), name="prop_area_gt_0"),
+            models.CheckConstraint(check=Q(price__gte=0), name="prop_price_gte_0"),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.get_type_display()} • {self.address}"
+
+
+class PropertyImage(models.Model):
+    property = models.ForeignKey(
+        Property,
+        on_delete=models.CASCADE,
+        related_name="images",
+        db_index=True,
+    )
+
+    image = models.ImageField(upload_to=property_image_upload_to, null=True, blank=True)
+    external_url = models.URLField(max_length=500, null=True, blank=True)
+
+    sort_order = models.PositiveSmallIntegerField(default=0, db_index=True)
+    is_primary = models.BooleanField(default=False, db_index=True)
+
+    created_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        verbose_name = _("property image")
+        verbose_name_plural = _("property images")
+        ordering = ["sort_order", "id"]
+        indexes = [
+            models.Index(fields=["property", "sort_order"], name="pimg_prop_sort_idx"),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["property", "sort_order"],
+                name="pimg_unique_sort_per_property",
+            ),
+            # Only ONE primary image per property
+            models.UniqueConstraint(
+                fields=["property"],
+                condition=Q(is_primary=True),
+                name="pimg_one_primary_per_property",
+            ),
+            # Require either image OR external_url (but not both empty)
+            models.CheckConstraint(
+                check=Q(image__isnull=False) | Q(external_url__isnull=False),
+                name="pimg_requires_image_or_url",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"Image #{self.id} for property {self.property_id}"

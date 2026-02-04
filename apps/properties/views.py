@@ -1,0 +1,117 @@
+from django.db import IntegrityError, transaction
+from django.shortcuts import get_object_or_404
+from rest_framework import generics, status
+from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
+from rest_framework.permissions import AllowAny, IsAuthenticated
+from rest_framework.response import Response
+
+from .filters import PropertyFilter
+from .models import Property, PropertyImage
+from .pagination import PropertyPagination
+from .permissions import IsDeveloper, IsPropertyOwner
+from .serializers import (
+    PropertyCreateSerializer,
+    PropertyImageCreateSerializer,
+    PropertyImageSerializer,
+    PropertyListSerializer,
+    PropertyUpdateSerializer,
+)
+
+
+class PropertyListCreateView(generics.ListCreateAPIView):
+    queryset = Property.objects.select_related("owner").prefetch_related("images")
+    pagination_class = PropertyPagination
+    filterset_class = PropertyFilter
+    ordering_fields = ["price", "created_at", "deadline", "area"]
+    ordering = ["-created_at"]
+
+    def get_permissions(self):
+        if self.request.method == "POST":
+            return [IsAuthenticated(), IsDeveloper()]
+        return [AllowAny()]
+
+    def get_serializer_class(self):
+        if self.request.method == "POST":
+            return PropertyCreateSerializer
+        return PropertyListSerializer
+
+    def perform_create(self, serializer):
+        # Set owner from request.user
+        serializer.save(owner=self.request.user)
+
+
+class PropertyDetailView(generics.RetrieveUpdateAPIView):
+    queryset = Property.objects.select_related("owner").prefetch_related("images")
+    http_method_names = ["get", "patch", "head", "options"]
+
+    def get_permissions(self):
+        if self.request.method in ("PATCH",):
+            return [IsAuthenticated(), IsDeveloper(), IsPropertyOwner()]
+        return [AllowAny()]
+
+    def get_serializer_class(self):
+        if self.request.method == "PATCH":
+            return PropertyUpdateSerializer
+        return PropertyListSerializer
+
+
+class PropertyImageListCreateView(generics.GenericAPIView):
+    parser_classes = [MultiPartParser, FormParser, JSONParser]
+
+    def get_permissions(self):
+        if self.request.method == "POST":
+            return [IsAuthenticated(), IsDeveloper()]
+        return [AllowAny()]
+
+    def get_property(self) -> Property:
+        prop = get_object_or_404(
+            Property.objects.select_related("owner"),
+            id=self.kwargs["pk"],
+        )
+        return prop
+
+    def get(self, request, *args, **kwargs):
+        prop = self.get_property()
+        imgs = prop.images.all().order_by("sort_order", "id")
+        ser = PropertyImageSerializer(imgs, many=True, context={"request": request})
+        return Response(ser.data, status=status.HTTP_200_OK)
+
+    def post(self, request, *args, **kwargs):
+        prop = self.get_property()
+
+        # Object-level permission: only owner can upload
+        if prop.owner_id != request.user.id:
+            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        ser = PropertyImageCreateSerializer(data=request.data)
+        ser.is_valid(raise_exception=True)
+
+        data = ser.validated_data
+        is_primary = bool(data.get("is_primary", False))
+        sort_order = data.get("sort_order", 0)
+
+        try:
+            with transaction.atomic():
+                if is_primary:
+                    # Ensure only one primary per property
+                    PropertyImage.objects.filter(property=prop, is_primary=True).update(
+                        is_primary=False
+                    )
+
+                img = PropertyImage.objects.create(
+                    property=prop,
+                    image=data.get("image"),
+                    external_url=data.get("external_url"),
+                    sort_order=sort_order,
+                    is_primary=is_primary,
+                )
+
+        except IntegrityError:
+            # Unique sort_order / one primary per property constraints
+            return Response(
+                {"error": "Constraint error. Check sort_order / is_primary."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        out = PropertyImageSerializer(img, context={"request": request})
+        return Response(out.data, status=status.HTTP_201_CREATED)
