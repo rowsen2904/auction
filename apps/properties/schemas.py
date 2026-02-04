@@ -1,0 +1,343 @@
+# apps/properties/schemas.py
+
+from django.utils.translation import gettext_lazy as _
+from drf_spectacular.types import OpenApiTypes
+from drf_spectacular.utils import (
+    OpenApiExample,
+    OpenApiParameter,
+    OpenApiResponse,
+    extend_schema,
+)
+from rest_framework import serializers
+
+from .serializers import (
+    PropertyCreateSerializer,
+    PropertyImageCreateSerializer,
+    PropertyImageSerializer,
+    PropertyListSerializer,
+    PropertyUpdateSerializer,
+)
+
+# -----------------------------
+# Common response serializers
+# -----------------------------
+
+
+class ErrorResponseSerializer(serializers.Serializer):
+    error = serializers.CharField()
+
+
+class DRFDetailErrorSerializer(serializers.Serializer):
+    detail = serializers.CharField()
+
+
+# -----------------------------
+# Docs text
+# -----------------------------
+
+PROPERTIES_LIST_DOC = _(
+    "Returns a paginated list of properties.\n\n"
+    "Filters are supported via query params:\n"
+    "- `type`\n"
+    "- `property_class`\n"
+    "- `status`\n"
+    "- `currency`\n"
+    "- `address` (icontains)\n"
+    "- `price_min`, `price_max`\n"
+    "- `area_min`, `area_max`\n\n"
+    "Sorting:\n"
+    "- `ordering` (e.g. `-created_at`, `price`, `area`)\n"
+)
+
+PROPERTIES_CREATE_DOC = _(
+    "Creates a new property.\n\n"
+    "**Only users with role `developer` can create properties.**\n"
+    "Owner is set automatically from the authenticated user."
+)
+
+PROPERTY_DETAIL_DOC = _("Returns property details including images.")
+
+PROPERTY_PATCH_DOC = _(
+    "Partially updates a property.\n\n"
+    "**Only the owner (developer who created it) can update the property.**"
+)
+
+PROPERTY_IMAGES_LIST_DOC = _(
+    "Returns images for the given property.\n\n" "Ordered by `sort_order` then `id`."
+)
+
+PROPERTY_IMAGES_CREATE_DOC = _(
+    "Uploads/creates an image record for the given property.\n\n"
+    "**Only the owner (developer who created the property) can add images.**\n\n"
+    "You can provide either:\n"
+    "- `image` file upload, OR\n"
+    "- `external_url`\n"
+)
+
+# -----------------------------
+# Schemas (views)
+# -----------------------------
+
+properties_list_schema = extend_schema(
+    summary="List properties",
+    description=PROPERTIES_LIST_DOC,
+    responses={
+        200: OpenApiResponse(
+            response=PropertyListSerializer(many=True),
+            description="Paginated list of properties.",
+            examples=[
+                OpenApiExample(
+                    "List example",
+                    value={
+                        "count": 1,
+                        "next": None,
+                        "previous": None,
+                        "results": [
+                            {
+                                "id": 1,
+                                "developer": 10,
+                                "type": "apartment",
+                                "address": "Moscow, Tverskaya 1",
+                                "area": "52.50",
+                                "property_class": "comfort",
+                                "price": "12000000.00",
+                                "currency": "RUB",
+                                "deadline": "2026-10-01",
+                                "status": "published",
+                                "images": [],
+                                "created_at": "2026-02-04T06:00:00Z",
+                                "updated_at": "2026-02-04T06:00:00Z",
+                            }
+                        ],
+                    },
+                )
+            ],
+        )
+    },
+    parameters=[
+        OpenApiParameter(
+            name="page",
+            type=OpenApiTypes.INT,
+            required=False,
+            location=OpenApiParameter.QUERY,
+        ),
+        OpenApiParameter(
+            name="page_size",
+            type=OpenApiTypes.INT,
+            required=False,
+            location=OpenApiParameter.QUERY,
+        ),
+        OpenApiParameter(
+            name="type",
+            type=OpenApiTypes.STR,
+            required=False,
+            location=OpenApiParameter.QUERY,
+        ),
+        OpenApiParameter(
+            name="property_class",
+            type=OpenApiTypes.STR,
+            required=False,
+            location=OpenApiParameter.QUERY,
+        ),
+        OpenApiParameter(
+            name="status",
+            type=OpenApiTypes.STR,
+            required=False,
+            location=OpenApiParameter.QUERY,
+        ),
+        OpenApiParameter(
+            name="currency",
+            type=OpenApiTypes.STR,
+            required=False,
+            location=OpenApiParameter.QUERY,
+        ),
+        OpenApiParameter(
+            name="address",
+            type=OpenApiTypes.STR,
+            required=False,
+            location=OpenApiParameter.QUERY,
+        ),
+        OpenApiParameter(
+            name="price_min",
+            type=OpenApiTypes.NUMBER,
+            required=False,
+            location=OpenApiParameter.QUERY,
+        ),
+        OpenApiParameter(
+            name="price_max",
+            type=OpenApiTypes.NUMBER,
+            required=False,
+            location=OpenApiParameter.QUERY,
+        ),
+        OpenApiParameter(
+            name="area_min",
+            type=OpenApiTypes.NUMBER,
+            required=False,
+            location=OpenApiParameter.QUERY,
+        ),
+        OpenApiParameter(
+            name="area_max",
+            type=OpenApiTypes.NUMBER,
+            required=False,
+            location=OpenApiParameter.QUERY,
+        ),
+        OpenApiParameter(
+            name="ordering",
+            type=OpenApiTypes.STR,
+            required=False,
+            location=OpenApiParameter.QUERY,
+            description="Example: `-created_at`, `price`, `area`, `deadline`",
+        ),
+    ],
+    tags=["Properties"],
+)
+
+properties_create_schema = extend_schema(
+    summary="Create property",
+    description=PROPERTIES_CREATE_DOC,
+    request=PropertyCreateSerializer,
+    responses={
+        201: OpenApiResponse(
+            response=PropertyCreateSerializer,
+            description="Property created.",
+            examples=[
+                OpenApiExample(
+                    "Created",
+                    value={
+                        "type": "apartment",
+                        "address": "Moscow, Tverskaya 1",
+                        "area": "52.50",
+                        "property_class": "comfort",
+                        "price": "12000000.00",
+                        "currency": "RUB",
+                        "deadline": "2026-10-01",
+                        "status": "draft",
+                    },
+                )
+            ],
+        ),
+        401: OpenApiResponse(
+            response=DRFDetailErrorSerializer,
+            description="Unauthorized.",
+            examples=[
+                OpenApiExample(
+                    "Unauthorized",
+                    value={"detail": "Authentication credentials were not provided."},
+                )
+            ],
+        ),
+        403: OpenApiResponse(
+            response=DRFDetailErrorSerializer,
+            description="Forbidden (only developer can create).",
+            examples=[
+                OpenApiExample(
+                    "Forbidden",
+                    value={
+                        "detail": "You do not have permission to perform this action."
+                    },
+                )
+            ],
+        ),
+        400: OpenApiResponse(description="Validation error."),
+    },
+    tags=["Properties"],
+)
+
+property_detail_schema = extend_schema(
+    summary="Get property detail",
+    description=PROPERTY_DETAIL_DOC,
+    responses={
+        200: OpenApiResponse(
+            response=PropertyListSerializer,
+            description="Property details.",
+        ),
+        404: OpenApiResponse(description="Not found."),
+    },
+    tags=["Properties"],
+)
+
+property_patch_schema = extend_schema(
+    summary="Update property (partial)",
+    description=PROPERTY_PATCH_DOC,
+    request=PropertyUpdateSerializer,
+    responses={
+        200: OpenApiResponse(
+            response=PropertyUpdateSerializer,
+            description="Property updated.",
+        ),
+        401: OpenApiResponse(
+            response=DRFDetailErrorSerializer,
+            description="Unauthorized.",
+        ),
+        403: OpenApiResponse(
+            response=DRFDetailErrorSerializer,
+            description="Forbidden (only owner).",
+        ),
+        404: OpenApiResponse(description="Not found."),
+        400: OpenApiResponse(description="Validation error."),
+    },
+    tags=["Properties"],
+)
+
+property_images_list_schema = extend_schema(
+    summary="List property images",
+    description=PROPERTY_IMAGES_LIST_DOC,
+    responses={
+        200: OpenApiResponse(
+            response=PropertyImageSerializer(many=True),
+            description="List of images for the property.",
+            examples=[
+                OpenApiExample(
+                    "Images",
+                    value=[
+                        {
+                            "id": 100,
+                            "url": "http://host/media/developers/10/properties/1/abc.jpg",
+                            "external_url": None,
+                            "sort_order": 0,
+                            "is_primary": True,
+                            "created_at": "2026-02-04T06:10:00Z",
+                        }
+                    ],
+                )
+            ],
+        ),
+        404: OpenApiResponse(description="Property not found."),
+    },
+    tags=["Properties"],
+)
+
+property_images_create_schema = extend_schema(
+    summary="Add property image",
+    description=PROPERTY_IMAGES_CREATE_DOC,
+    request=PropertyImageCreateSerializer,
+    responses={
+        201: OpenApiResponse(
+            response=PropertyImageSerializer,
+            description="Image created.",
+        ),
+        401: OpenApiResponse(
+            response=DRFDetailErrorSerializer,
+            description="Unauthorized.",
+        ),
+        403: OpenApiResponse(
+            response=DRFDetailErrorSerializer,
+            description="Forbidden (only owner).",
+        ),
+        404: OpenApiResponse(
+            response=DRFDetailErrorSerializer,
+            description="Not found (your view returns 404 when not owner).",
+        ),
+        400: OpenApiResponse(
+            response=ErrorResponseSerializer,
+            description="Validation / constraint error.",
+            examples=[
+                OpenApiExample(
+                    "Constraint error",
+                    value={"error": "Constraint error. Check sort_order / is_primary."},
+                )
+            ],
+        ),
+    },
+    tags=["Properties"],
+)

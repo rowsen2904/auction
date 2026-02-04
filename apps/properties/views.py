@@ -9,6 +9,14 @@ from .filters import PropertyFilter
 from .models import Property, PropertyImage
 from .pagination import PropertyPagination
 from .permissions import IsDeveloper, IsPropertyOwner
+from .schemas import (
+    properties_create_schema,
+    properties_list_schema,
+    property_detail_schema,
+    property_images_create_schema,
+    property_images_list_schema,
+    property_patch_schema,
+)
 from .serializers import (
     PropertyCreateSerializer,
     PropertyImageCreateSerializer,
@@ -39,6 +47,14 @@ class PropertyListCreateView(generics.ListCreateAPIView):
         # Set owner from request.user
         serializer.save(owner=self.request.user)
 
+    @properties_list_schema
+    def get(self, request, *args, **kwargs):
+        return super().get(request, *args, **kwargs)
+
+    @properties_create_schema
+    def post(self, request, *args, **kwargs):
+        return super().post(request, *args, **kwargs)
+
 
 class PropertyDetailView(generics.RetrieveUpdateAPIView):
     queryset = Property.objects.select_related("owner").prefetch_related("images")
@@ -53,6 +69,14 @@ class PropertyDetailView(generics.RetrieveUpdateAPIView):
         if self.request.method == "PATCH":
             return PropertyUpdateSerializer
         return PropertyListSerializer
+
+    @property_detail_schema
+    def get(self, request, *args, **kwargs):
+        return super().get(request, *args, **kwargs)
+
+    @property_patch_schema
+    def patch(self, request, *args, **kwargs):
+        return super().patch(request, *args, **kwargs)
 
 
 class PropertyImageListCreateView(generics.GenericAPIView):
@@ -70,12 +94,14 @@ class PropertyImageListCreateView(generics.GenericAPIView):
         )
         return prop
 
+    @property_images_list_schema
     def get(self, request, *args, **kwargs):
         prop = self.get_property()
         imgs = prop.images.all().order_by("sort_order", "id")
         ser = PropertyImageSerializer(imgs, many=True, context={"request": request})
         return Response(ser.data, status=status.HTTP_200_OK)
 
+    @property_images_create_schema
     def post(self, request, *args, **kwargs):
         prop = self.get_property()
 
