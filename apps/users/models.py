@@ -2,10 +2,11 @@ import os
 from uuid import uuid4
 
 from django.contrib.auth.models import AbstractBaseUser, PermissionsMixin, BaseUserManager
-from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
+
+from .validators import validate_inn
 
 
 def broker_passport_folder(instance, filename):
@@ -14,6 +15,14 @@ def broker_passport_folder(instance, filename):
 
     user_id = instance.user_id or "tmp"
     return f"brokers/{user_id}/passports/{uuid4().hex}{ext}"
+
+
+def broker_inn_folder(instance, filename):
+    _, ext = os.path.splitext(filename)
+    ext = ext.lower()
+
+    user_id = instance.user_id or "tmp"
+    return f"brokers/{user_id}/inns/{uuid4().hex}{ext}"
 
 
 class UserManager(BaseUserManager):
@@ -126,6 +135,16 @@ class Broker(models.Model):
 
     is_verified = models.BooleanField(default=False, db_index=True)
     verified_at = models.DateTimeField(null=True, blank=True)
+    inn = models.FileField(
+        upload_to=broker_inn_folder,
+        null=True,
+        blank=True
+    )
+    inn_number = models.CharField(
+        max_length=12,
+        validators=[validate_inn],
+        unique=True
+    )
     passport = models.FileField(
         upload_to=broker_passport_folder,
         null=True,
@@ -171,7 +190,7 @@ class Developer(models.Model):
     class Meta:
         verbose_name = _("developer")
         verbose_name_plural = _("developers")
-    
+
     def __str__(self):
         return '{}'.format(self.user.get_full_name())
 

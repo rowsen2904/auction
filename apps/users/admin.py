@@ -72,7 +72,7 @@ class BrokerInline(admin.StackedInline):
     model = Broker
     extra = 0
     can_delete = True
-    fields = ("is_verified", "verified_at", "passport")
+    fields = ("is_verified", "verified_at", "inn_number", "inn", "passport")
     readonly_fields = ("verified_at",)
 
 
@@ -131,9 +131,9 @@ class UserAdmin(DjangoUserAdmin):
 
 @admin.register(Broker)
 class BrokerAdmin(admin.ModelAdmin):
-    list_display = ("user", "is_verified", "verified_at")
+    list_display = ("user", "is_verified", "verified_at", "inn_number")
     list_filter = ("is_verified",)
-    search_fields = ("user__email", "user__first_name", "user__last_name")
+    search_fields = ("user__email", "user__first_name", "user__last_name", "inn_number")
     autocomplete_fields = ("user",)
 
 

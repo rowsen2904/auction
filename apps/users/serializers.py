@@ -8,7 +8,9 @@ from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
 from .models import Broker, Developer
 from .utils import verify_code, is_email_verified_for_registration
+from .validators import validate_inn
 from auction.settings import EMAIL_VERIFICATION_CODE_LENGTH
+from helpers.validators import FileSizeValidationMixin
 
 User = get_user_model()
 
@@ -174,30 +176,28 @@ class BaseRegisterSerializer(serializers.Serializer):
         return attrs
 
 
-class RegisterDeveloperSerializer(BaseRegisterSerializer):
-    """
-    Registers a developer user (role=developer).
-    Email must be verified via OTP beforehand.
-    """
-    company_name = serializers.CharField(required=True)
-
-
-class RegisterBrokerSerializer(BaseRegisterSerializer):
+class RegisterBrokerSerializer(FileSizeValidationMixin, BaseRegisterSerializer):
     """
     Registers a broker user (role=broker) and creates Broker profile.
     Requires passport upload.
     """
+    inn = serializers.FileField(required=True)
+    inn_number = serializers.IntegerField(required=True)
     passport = serializers.FileField(required=True)
 
+    def validate_inn(self, file):
+        return self._validate_file_size(file, "inn")
+    
+    def validate_inn_number(self, value: str) -> str:
+        validate_inn(value)
+        return value
+
     def validate_passport(self, file):
-        # Optional: basic validation (keep it minimal and fast)
-        if file.size > 10 * 1024 * 1024:  # 10MB
-            raise serializers.ValidationError(
-                _("File is too large (max 10MB)."), code="file_too_large")
-        return file
+        return self._validate_file_size(file, "passport")
 
 
 class BrokerInfoSerializer(serializers.ModelSerializer):
+    inn_url = serializers.SerializerMethodField()
     passport_url = serializers.SerializerMethodField()
 
     class Meta:
@@ -206,15 +206,32 @@ class BrokerInfoSerializer(serializers.ModelSerializer):
             "is_verified",
             "verification_status",
             "verified_at",
+            "inn_number",
+            "inn_url",
             "passport_url",
         ]
 
-    def get_passport_url(self, obj):
+    def _build_file_url(self, obj, field_name: str):
         request = self.context.get("request")
-        if not obj.passport:
+        f = getattr(obj, field_name, None)
+        if not f:
             return None
-        url = obj.passport.url
+        url = f.url
         return request.build_absolute_uri(url) if request else url
+
+    def get_inn_url(self, obj):
+        return self._build_file_url(obj, "inn")
+
+    def get_passport_url(self, obj):
+        return self._build_file_url(obj, "passport")
+
+
+class RegisterDeveloperSerializer(BaseRegisterSerializer):
+    """
+    Registers a developer user (role=developer).
+    Email must be verified via OTP beforehand.
+    """
+    company_name = serializers.CharField(required=True)
 
 
 class DeveloperInfoSerializer(serializers.ModelSerializer):

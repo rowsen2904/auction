@@ -5,7 +5,6 @@ from rest_framework import generics, status
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
-from rest_framework_simplejwt.serializers import TokenRefreshSerializer
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
 from .models import Broker, Developer
@@ -209,6 +208,8 @@ class RegisterBrokerView(generics.GenericAPIView):
         password = serializer.validated_data["password"]
         first_name = serializer.validated_data.get("first_name", "")
         last_name = serializer.validated_data.get("last_name", "")
+        inn_number = serializer.validated_data["inn_number"]
+        inn = serializer.validated_data["inn"]
         passport = serializer.validated_data["passport"]
 
         try:
@@ -224,6 +225,8 @@ class RegisterBrokerView(generics.GenericAPIView):
 
                 broker = Broker.objects.create(
                     user=user,
+                    inn_number=inn_number,
+                    inn=inn,
                     passport=passport,
                 )
 
