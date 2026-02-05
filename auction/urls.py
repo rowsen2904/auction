@@ -36,6 +36,7 @@ urlpatterns = [
     ),
     path("api/v1/auth/", include("apps.users.urls")),
     path("api/v1/properties/", include("properties.urls")),
+    path("api/v1/auctions/", include("auctions.urls")),
 ]
 
 if settings.DEBUG:

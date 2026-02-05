@@ -48,6 +48,7 @@ INSTALLED_APPS = [
     # my apps
     "users",
     "properties",
+    "auctions",
 ]
 
 MIDDLEWARE = [
