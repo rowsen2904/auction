@@ -35,7 +35,7 @@ DATABASES = {
 CACHES = {
     "default": {
         "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
-        "LOCATION": "auction-test-cache",
+        "LOCATION": "migtender-test-cache",
     }
 }
 

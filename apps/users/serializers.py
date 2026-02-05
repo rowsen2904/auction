@@ -6,8 +6,8 @@ from rest_framework import serializers
 from rest_framework.exceptions import AuthenticationFailed
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
-from auction.settings import EMAIL_VERIFICATION_CODE_LENGTH
 from helpers.validators import FileSizeValidationMixin
+from migtender.settings import EMAIL_VERIFICATION_CODE_LENGTH
 
 from .models import Broker, Developer
 from .utils import is_email_verified_for_registration, verify_code
