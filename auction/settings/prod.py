@@ -3,11 +3,11 @@ from .base import *  # noqa
 DEBUG = False
 
 ALLOWED_HOSTS = [
-    "backend.ochiapp.com",
-    "www.backend.ochiapp.com",
+    "backend.migtender.app",
+    "www.backend.migtender.app",
 ]
 
-CORS_ALLOWED_ORIGINS = []
+CORS_ALLOWED_ORIGINS = ["https://migtender.app/" "https://admin.migtender.app/"]
 
 HTTPS_ONLY = True
 SECURE_SSL_REDIRECT = True
