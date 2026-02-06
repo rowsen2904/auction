@@ -12,9 +12,6 @@ DEBUG = False
 # Django test client uses "testserver" host by default
 ALLOWED_HOSTS = ["testserver", "localhost", "127.0.0.1"]
 
-# Use deterministic secret in tests
-SECRET_KEY = os.getenv("TEST_SECRET_KEY", "test-secret-key")
-
 
 # -----------------------------
 # Database
