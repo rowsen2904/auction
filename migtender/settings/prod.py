@@ -3,8 +3,8 @@ from .base import *  # noqa
 DEBUG = False
 
 ALLOWED_HOSTS = [
-    "backend.migtender.app",
-    "www.backend.migtender.app",
+    "backend.migntender.app",
+    "www.backend.migntender.app",
     "72.62.249.144",
     "127.0.0.1",
     "localhost",
