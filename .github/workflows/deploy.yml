@@ -1,0 +1,38 @@
+name: Deploy backend (migtender)
+
+on:
+  push:
+    branches: ["main"]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-backend
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: SSH deploy
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_KEY }}
+          port: ${{ secrets.DEPLOY_PORT }}
+          script: |
+            set -e
+
+            cd /root/migtender
+
+            git fetch --all
+            git reset --hard origin/main
+
+            /root/migtender/venv/bin/pip install -r requirements.txt
+            /root/migtender/venv/bin/python manage.py migrate --noinput
+            /root/migtender/venv/bin/python manage.py collectstatic --noinput
+
+            systemctl restart migtender
+
+            nginx -t
+            systemctl reload nginx

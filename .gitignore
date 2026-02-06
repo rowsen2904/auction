@@ -6,3 +6,6 @@ db.sqlite3
 media/
 dump.rdb
 logs/
+
+github_actions_deploy.pub
+github_actions_deploy
