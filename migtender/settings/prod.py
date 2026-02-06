@@ -10,7 +10,7 @@ ALLOWED_HOSTS = [
     "localhost",
 ]
 
-CORS_ALLOWED_ORIGINS = ["https://migtender.app/" "https://admin.migtender.app/"]
+CORS_ALLOWED_ORIGINS = ["https://migntender.app/", "https://admin.migntender.app/"]
 
 CSRF_TRUSTED_ORIGINS = [
     "https://backend.migntender.app",
