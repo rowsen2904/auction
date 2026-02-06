@@ -5,6 +5,8 @@ DEBUG = False
 ALLOWED_HOSTS = [
     "backend.migtender.app",
     "www.backend.migtender.app",
+    "http://72.62.249.144/",
+    "72.62.249.144",
 ]
 
 CORS_ALLOWED_ORIGINS = ["https://migtender.app/" "https://admin.migtender.app/"]
