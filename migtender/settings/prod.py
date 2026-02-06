@@ -5,11 +5,17 @@ DEBUG = False
 ALLOWED_HOSTS = [
     "backend.migtender.app",
     "www.backend.migtender.app",
-    "http://72.62.249.144/",
     "72.62.249.144",
+    "127.0.0.1",
+    "localhost",
 ]
 
 CORS_ALLOWED_ORIGINS = ["https://migtender.app/" "https://admin.migtender.app/"]
+
+CSRF_TRUSTED_ORIGINS = [
+    "https://backend.migntender.app",
+    "https://www.backend.migntender.app",
+]
 
 HTTPS_ONLY = True
 SECURE_SSL_REDIRECT = True
