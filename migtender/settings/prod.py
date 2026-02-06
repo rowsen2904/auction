@@ -12,10 +12,7 @@ ALLOWED_HOSTS = [
 
 CORS_ALLOWED_ORIGINS = ["https://migntender.app/", "https://admin.migntender.app/"]
 
-CSRF_TRUSTED_ORIGINS = [
-    "https://backend.migntender.app",
-    "https://www.backend.migntender.app",
-]
+CSRF_TRUSTED_ORIGINS = ["https://backend.migntender.app"]
 
 HTTPS_ONLY = True
 SECURE_SSL_REDIRECT = True
