@@ -10,7 +10,7 @@ from .models import Auction, Bid
 
 
 class BidSerializer(serializers.ModelSerializer):
-    broker_id = serializers.IntegerField(source="broker_id", read_only=True)
+    broker_id = serializers.IntegerField(read_only=True)
 
     class Meta:
         model = Bid
@@ -19,10 +19,12 @@ class BidSerializer(serializers.ModelSerializer):
 
 
 class AuctionListSerializer(serializers.ModelSerializer):
-    property_id = serializers.IntegerField(source="property_id", read_only=True)
-    owner_id = serializers.IntegerField(source="owner_id", read_only=True)
-    highest_bid_id = serializers.IntegerField(source="highest_bid_id", read_only=True)
-    winner_bid_id = serializers.IntegerField(source="winner_bid_id", read_only=True)
+    # Model has real_property, but API expects property_id
+    property_id = serializers.IntegerField(source="real_property_id", read_only=True)
+
+    owner_id = serializers.IntegerField(read_only=True)
+    highest_bid_id = serializers.IntegerField(read_only=True)
+    winner_bid_id = serializers.IntegerField(read_only=True)
 
     class Meta:
         model = Auction
@@ -45,9 +47,9 @@ class AuctionListSerializer(serializers.ModelSerializer):
 
 
 class AuctionCreateSerializer(serializers.ModelSerializer):
-    # Accept propertyId from API
+    # API accepts property_id, but model field is real_property
     property_id = serializers.PrimaryKeyRelatedField(
-        source="property",
+        source="real_property",
         queryset=Property.objects.all(),
         write_only=True,
     )
@@ -65,7 +67,6 @@ class AuctionCreateSerializer(serializers.ModelSerializer):
                 {"end_date": "end_date must be greater than start_date."}
             )
 
-        # Optional safety: prevent creating auctions ending in the past
         if end and end <= timezone.now():
             raise serializers.ValidationError(
                 {"end_date": "end_date must be in the future."}
@@ -73,7 +74,7 @@ class AuctionCreateSerializer(serializers.ModelSerializer):
 
         return attrs
 
-    def validate_property(self, prop: Property):
+    def validate_property_id(self, prop: Property):
         # Only allow creating auctions for properties owned by the developer
         request = self.context["request"]
         if prop.owner_id != request.user.id:
@@ -84,13 +85,19 @@ class AuctionCreateSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         request = self.context["request"]
+        now = timezone.now()
+        start = validated_data["start_date"]
+        end = validated_data["end_date"]
+
+        # Auto-activate if start already passed
+        status = Auction.Status.ACTIVE if (start <= now < end) else Auction.Status.DRAFT
+
         return Auction.objects.create(
-            owner=request.user, status=Auction.Status.DRAFT, **validated_data
+            owner=request.user, status=status, **validated_data
         )
 
 
 class AuctionDetailSerializer(AuctionListSerializer):
-    # Bids can be included depending on mode/permissions
     bids = serializers.SerializerMethodField()
 
     class Meta(AuctionListSerializer.Meta):
@@ -99,12 +106,12 @@ class AuctionDetailSerializer(AuctionListSerializer):
     def get_bids(self, obj: Auction):
         request = self.context.get("request")
 
-        # Open auctions: bids are public (real-time)
+        # Open auctions: bids are public
         if obj.mode == Auction.Mode.OPEN:
             qs = obj.bids.select_related("broker").order_by("-created_at")[:50]
             return BidSerializer(qs, many=True).data
 
-        # Closed auctions: bids are hidden for everyone except owner
+        # Closed auctions: bids are visible only to owner
         if (
             request
             and request.user.is_authenticated
