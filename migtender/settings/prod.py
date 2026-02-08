@@ -10,6 +10,7 @@ ALLOWED_HOSTS = [
     "localhost",
 ]
 
+CORS_ALLOW_CREDENTIALS = True
 CORS_ALLOWED_ORIGINS = [
     "https://migntender.app",
     "https://www.migntender.app",
