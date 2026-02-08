@@ -21,7 +21,6 @@ def validate_inn(value: str) -> None:
 
     if not inn.isdigit():
         raise ValidationError(_("INN must contain digits only."))
-    print("Working")
     if len(inn) not in (10, 12):
         raise ValidationError(_("INN must be exactly 10 or 12 digits long."))
 
