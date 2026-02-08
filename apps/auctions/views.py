@@ -8,6 +8,12 @@ from rest_framework.response import Response
 from .filters import AuctionFilter
 from .models import Auction
 from .paginations import AuctionPagination
+from .schemas import (
+    auction_create_schema,
+    auction_detail_schema,
+    auction_list_schema,
+    my_auctions_schema,
+)
 from .serializers import (
     AuctionCreateSerializer,
     AuctionDetailSerializer,
@@ -30,7 +36,6 @@ class MyAuctionListView(generics.ListAPIView):
     ]
 
     def get_queryset(self):
-        print(self.request.user)
         return Auction.objects.filter(owner=self.request.user).only(
             "id",
             "real_property_id",
@@ -47,6 +52,10 @@ class MyAuctionListView(generics.ListAPIView):
             "created_at",
             "updated_at",
         )
+
+    @my_auctions_schema
+    def get(self, request, *args, **kwargs):
+        return super().get(request, *args, **kwargs)
 
 
 class AuctionListCreateView(generics.ListCreateAPIView):
@@ -90,6 +99,14 @@ class AuctionListCreateView(generics.ListCreateAPIView):
             return AuctionCreateSerializer
         return AuctionListSerializer
 
+    @auction_list_schema
+    def get(self, request, *args, **kwargs):
+        return super().get(request, *args, **kwargs)
+
+    @auction_create_schema
+    def post(self, request, *args, **kwargs):
+        return super().post(request, *args, **kwargs)
+
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -100,10 +117,6 @@ class AuctionListCreateView(generics.ListCreateAPIView):
 
 
 class AuctionDetailView(generics.RetrieveAPIView):
-    """
-    GET /auctions/:id
-    """
-
     serializer_class = AuctionDetailSerializer
     permission_classes = [AllowAny]
 
@@ -129,3 +142,7 @@ class AuctionDetailView(generics.RetrieveAPIView):
         ctx = super().get_serializer_context()
         ctx["request"] = self.request
         return ctx
+
+    @auction_detail_schema
+    def get(self, request, *args, **kwargs):
+        return super().get(request, *args, **kwargs)
