@@ -25,6 +25,7 @@ class MyAuctionListView(generics.ListAPIView):
     pagination_class = AuctionPagination
     serializer_class = AuctionListSerializer
     permission_classes = [IsAuthenticated, IsDeveloper]
+    filterset_class = AuctionFilter
 
     ordering = ["-created_at"]
     ordering_fields = [
