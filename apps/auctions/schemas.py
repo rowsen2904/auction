@@ -84,6 +84,18 @@ Select winner for CLOSED auction (manual).
 Only auction owner (developer) can select winner, and only after end_date.
 """
 
+AUCTION_CANCEL_DOC = """
+Soft-cancel an auction (status becomes CANCELLED) and remove its scheduled Celery Beat tasks.
+
+Cancellation rules:
+- After `start_date`: nobody can cancel (including admin).
+- Within 10 minutes before `start_date`: only admin can cancel.
+- Earlier than that: owner or admin can cancel.
+
+Notes:
+- This endpoint returns **204 No Content** on success.
+"""
+
 
 # ----------------------------
 # Schemas
@@ -263,6 +275,28 @@ auction_select_winner_schema = extend_schema(
         ),
         403: OpenApiResponse(
             response=DRFDetailErrorSerializer, description="Forbidden (owner only)."
+        ),
+        404: OpenApiResponse(description="Not found."),
+    },
+    tags=["Auctions"],
+)
+
+auction_cancel_schema = extend_schema(
+    summary="Cancel auction (soft delete)",
+    description=AUCTION_CANCEL_DOC,
+    responses={
+        204: OpenApiResponse(description="Auction cancelled."),
+        400: OpenApiResponse(
+            response=DRFDetailErrorSerializer,
+            description="Validation error (e.g., auction already started).",
+        ),
+        401: OpenApiResponse(
+            response=DRFDetailErrorSerializer,
+            description="Unauthorized.",
+        ),
+        403: OpenApiResponse(
+            response=DRFDetailErrorSerializer,
+            description="Forbidden (not owner/admin, or within 10 minutes for non-admin).",
         ),
         404: OpenApiResponse(description="Not found."),
     },

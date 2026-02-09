@@ -15,6 +15,7 @@ from .models import Auction
 from .paginations import AuctionPagination
 from .permissions import IsAuctionOwnerOrAdmin, IsDeveloper
 from .schemas import (
+    auction_cancel_schema,
     auction_create_schema,
     auction_detail_schema,
     auction_list_schema,
@@ -222,6 +223,7 @@ class AuctionCancelView(generics.DestroyAPIView):
                 lambda: cancel_auction_status_tasks(auction_id=auction.id)
             )
 
+    @auction_cancel_schema
     def delete(self, request, *args, **kwargs):
         super().delete(request, *args, **kwargs)
         return Response(status=status.HTTP_204_NO_CONTENT)
