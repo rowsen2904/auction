@@ -1,3 +1,4 @@
+from auctions.permissions import IsDeveloper
 from django.db import IntegrityError, transaction
 from django.shortcuts import get_object_or_404
 from rest_framework import generics, status
@@ -8,7 +9,7 @@ from rest_framework.response import Response
 from .filters import PropertyFilter
 from .models import Property, PropertyImage
 from .pagination import PropertyPagination
-from .permissions import IsDeveloper, IsPropertyOwner
+from .permissions import IsPropertyOwner
 from .schemas import (
     my_properties_list_schema,
     properties_create_schema,

@@ -1,12 +1,15 @@
 from __future__ import annotations
 
+from datetime import timedelta
 from decimal import Decimal
 
+from django.db import transaction
 from django.utils import timezone
 from properties.models import Property
 from rest_framework import serializers
 
 from .models import Auction, Bid
+from .tasks import schedule_auction_status_tasks
 
 
 class BidSerializer(serializers.ModelSerializer):
@@ -61,13 +64,20 @@ class AuctionCreateSerializer(serializers.ModelSerializer):
     def validate(self, attrs):
         start = attrs.get("start_date")
         end = attrs.get("end_date")
+        now = timezone.now()
+
+        if start and start < now + timedelta(hours=1):
+            raise serializers.ValidationError(
+                {"start_date": "start_date must be at least 1 hour from now."}
+            )
 
         if start and end and end <= start:
             raise serializers.ValidationError(
                 {"end_date": "end_date must be greater than start_date."}
             )
 
-        if end and end <= timezone.now():
+        # Extra safety (optional)
+        if end and end <= now:
             raise serializers.ValidationError(
                 {"end_date": "end_date must be in the future."}
             )
@@ -85,20 +95,32 @@ class AuctionCreateSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         request = self.context["request"]
-        now = timezone.now()
-        start = validated_data["start_date"]
-        end = validated_data["end_date"]
 
-        # Auto-activate if start already passed
-        status = Auction.Status.ACTIVE if (start <= now < end) else Auction.Status.DRAFT
-
-        return Auction.objects.create(
-            owner=request.user, status=status, **validated_data
+        # Always create as DRAFT (it will become ACTIVE via beat at start_date)
+        auction = Auction.objects.create(
+            owner=request.user,
+            status=Auction.Status.DRAFT,
+            **validated_data,
         )
+
+        # Create beat tasks only after DB commit (no orphan tasks on rollback)
+        start_date = auction.start_date
+        end_date = auction.end_date
+
+        transaction.on_commit(
+            lambda: schedule_auction_status_tasks(
+                auction_id=auction.id,
+                start_date=start_date,
+                end_date=end_date,
+            )
+        )
+
+        return auction
 
 
 class AuctionDetailSerializer(AuctionListSerializer):
     bids = serializers.SerializerMethodField()
+    start_date = serializers.DateTimeField()
 
     class Meta(AuctionListSerializer.Meta):
         fields = AuctionListSerializer.Meta.fields + ["bids"]

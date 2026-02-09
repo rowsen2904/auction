@@ -1,13 +1,19 @@
 from __future__ import annotations
 
-from properties.permissions import IsDeveloper
+from datetime import timedelta
+
+from django.db import transaction
+from django.db.models import Q
+from django.utils import timezone
 from rest_framework import generics, status
+from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 
 from .filters import AuctionFilter
 from .models import Auction
 from .paginations import AuctionPagination
+from .permissions import IsAuctionOwnerOrAdmin, IsDeveloper
 from .schemas import (
     auction_create_schema,
     auction_detail_schema,
@@ -19,6 +25,7 @@ from .serializers import (
     AuctionDetailSerializer,
     AuctionListSerializer,
 )
+from .tasks import cancel_auction_status_tasks
 
 
 class MyAuctionListView(generics.ListAPIView):
@@ -147,3 +154,74 @@ class AuctionDetailView(generics.RetrieveAPIView):
     @auction_detail_schema
     def get(self, request, *args, **kwargs):
         return super().get(request, *args, **kwargs)
+
+
+class AuctionCancelView(generics.DestroyAPIView):
+    serializer_class = AuctionDetailSerializer
+    http_method_names = ["delete", "head", "options"]
+
+    def get_permissions(self):
+        if self.request.method == "DELETE":
+            return [IsAuthenticated(), IsAuctionOwnerOrAdmin()]
+        return [AllowAny()]
+
+    def get_queryset(self):
+        return Auction.objects.exclude(
+            Q(status=Auction.Status.CANCELLED) | Q(status=Auction.Status.FINISHED)
+        ).only(
+            "id",
+            "real_property_id",
+            "owner_id",
+            "mode",
+            "min_price",
+            "start_date",
+            "end_date",
+            "status",
+            "bids_count",
+            "current_price",
+            "highest_bid_id",
+            "winner_bid_id",
+            "created_at",
+            "updated_at",
+        )
+
+    def perform_destroy(self, instance: Auction) -> None:
+        """
+        Soft cancel: set status=CANCELLED and remove scheduled beat tasks.
+        Cancellation rules:
+        - after start_date: nobody can cancel
+        - within 10 minutes before start_date: only admin can cancel
+        """
+        user = self.request.user
+        is_admin = bool(
+            getattr(user, "is_staff", False) or getattr(user, "is_superuser", False)
+        )
+        now = timezone.now()
+
+        with transaction.atomic():
+            # Lock row to avoid races with beat tasks and concurrent deletes
+            auction = Auction.objects.select_for_update().get(pk=instance.pk)
+
+            # After start: cancellation is forbidden for everyone (including admin)
+            if now >= auction.start_date:
+                raise ValidationError(
+                    {"detail": "Auction cannot be cancelled after it has started."}
+                )
+
+            # Within 10 minutes before start: only admin can cancel
+            if auction.start_date - now <= timedelta(minutes=10) and not is_admin:
+                raise PermissionDenied(
+                    "Only admin can cancel an auction within 10 minutes of its start."
+                )
+
+            auction.status = Auction.Status.CANCELLED
+            auction.save(update_fields=["status", "updated_at"])
+
+            # Remove beat tasks after DB commit
+            transaction.on_commit(
+                lambda: cancel_auction_status_tasks(auction_id=auction.id)
+            )
+
+    def delete(self, request, *args, **kwargs):
+        super().delete(request, *args, **kwargs)
+        return Response(status=status.HTTP_204_NO_CONTENT)

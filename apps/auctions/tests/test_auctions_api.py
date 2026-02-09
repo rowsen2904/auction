@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import timedelta
 from decimal import Decimal
+from unittest.mock import patch
 
 from auctions.models import Auction, Bid
 from django.contrib.auth import get_user_model
@@ -14,6 +15,7 @@ User = get_user_model()
 
 BASE = "/api/v1/auctions/"
 MY_BASE = "/api/v1/auctions/my/"
+CANCEL_SUFFIX = "/cancel/"
 
 
 class AuctionAPITests(APITestCase):
@@ -35,6 +37,14 @@ class AuctionAPITests(APITestCase):
             password="StrongPass123!",
             role=User.Roles.BROKER,
             is_active=True,
+        )
+        self.admin = User.objects.create_user(
+            email="admin@test.com",
+            password="StrongPass123!",
+            role=User.Roles.DEVELOPER,
+            is_active=True,
+            is_staff=True,
+            is_superuser=True,
         )
 
         self.prop1 = self._create_property(self.dev1, address="Dev1 Property A")
@@ -75,10 +85,10 @@ class AuctionAPITests(APITestCase):
         current_price: Decimal = Decimal("0.00"),
     ) -> Auction:
         now = timezone.now()
-        start_dt = start or (now + timedelta(hours=1))
+        start_dt = start or (now + timedelta(hours=2))
         end_dt = end or (now + timedelta(days=1))
 
-        auc = Auction.objects.create(
+        return Auction.objects.create(
             owner=owner,
             real_property=prop,
             mode=mode,
@@ -88,7 +98,6 @@ class AuctionAPITests(APITestCase):
             status=status_val,
             current_price=current_price,
         )
-        return auc
 
     # -------------------------
     # CREATE (POST /auctions/)
@@ -102,7 +111,7 @@ class AuctionAPITests(APITestCase):
                 "property_id": self.prop1.id,
                 "mode": Auction.Mode.OPEN,
                 "min_price": "1000.00",
-                "start_date": (now + timedelta(hours=1)).isoformat(),
+                "start_date": (now + timedelta(hours=2)).isoformat(),
                 "end_date": (now + timedelta(days=1)).isoformat(),
             },
             format="json",
@@ -119,7 +128,7 @@ class AuctionAPITests(APITestCase):
                 "property_id": self.prop1.id,
                 "mode": Auction.Mode.OPEN,
                 "min_price": "1000.00",
-                "start_date": (now + timedelta(hours=1)).isoformat(),
+                "start_date": (now + timedelta(hours=2)).isoformat(),
                 "end_date": (now + timedelta(days=1)).isoformat(),
             },
             format="json",
@@ -127,7 +136,6 @@ class AuctionAPITests(APITestCase):
         self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)
 
     def test_create_auction_denies_creating_for_stranger_property(self):
-        # dev2 tries to create auction on dev1 property -> should be 400 validation error
         self.client.force_authenticate(user=self.dev2)
         now = timezone.now()
 
@@ -137,14 +145,32 @@ class AuctionAPITests(APITestCase):
                 "property_id": self.prop1.id,  # belongs to dev1
                 "mode": Auction.Mode.OPEN,
                 "min_price": "1000.00",
-                "start_date": (now + timedelta(hours=1)).isoformat(),
+                "start_date": (now + timedelta(hours=2)).isoformat(),
                 "end_date": (now + timedelta(days=1)).isoformat(),
             },
             format="json",
         )
         self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
 
-    def test_create_auction_validates_dates_end_must_be_after_start(self):
+    def test_create_auction_validates_start_must_be_at_least_1_hour_from_now(self):
+        self.client.force_authenticate(user=self.dev1)
+        now = timezone.now()
+
+        # 30 minutes from now -> should fail
+        resp = self.client.post(
+            BASE,
+            data={
+                "property_id": self.prop1.id,
+                "mode": Auction.Mode.OPEN,
+                "min_price": "1000.00",
+                "start_date": (now + timedelta(minutes=30)).isoformat(),
+                "end_date": (now + timedelta(days=1)).isoformat(),
+            },
+            format="json",
+        )
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_create_auction_validates_end_must_be_after_start(self):
         self.client.force_authenticate(user=self.dev1)
         now = timezone.now()
 
@@ -154,8 +180,8 @@ class AuctionAPITests(APITestCase):
                 "property_id": self.prop1.id,
                 "mode": Auction.Mode.OPEN,
                 "min_price": "1000.00",
-                "start_date": (now + timedelta(days=2)).isoformat(),
-                "end_date": (now + timedelta(days=1)).isoformat(),
+                "start_date": (now + timedelta(hours=2)).isoformat(),
+                "end_date": (now + timedelta(hours=1)).isoformat(),
             },
             format="json",
         )
@@ -171,54 +197,51 @@ class AuctionAPITests(APITestCase):
                 "property_id": self.prop1.id,
                 "mode": Auction.Mode.OPEN,
                 "min_price": "1000.00",
-                "start_date": (now - timedelta(days=2)).isoformat(),
-                "end_date": (now - timedelta(hours=1)).isoformat(),
+                "start_date": (now + timedelta(hours=2)).isoformat(),
+                "end_date": (now - timedelta(minutes=1)).isoformat(),
             },
             format="json",
         )
         self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
 
-    def test_create_auction_auto_sets_status_active_when_started(self):
+    @patch("auctions.serializers.schedule_auction_status_tasks")
+    def test_create_auction_success_creates_draft_and_schedules_tasks(
+        self, schedule_mock
+    ):
         self.client.force_authenticate(user=self.dev1)
         now = timezone.now()
+        start = now + timedelta(hours=2)
+        end = now + timedelta(days=1)
 
-        resp = self.client.post(
-            BASE,
-            data={
-                "property_id": self.prop1.id,
-                "mode": Auction.Mode.OPEN,
-                "min_price": "1000.00",
-                "start_date": (now - timedelta(minutes=5)).isoformat(),
-                "end_date": (now + timedelta(hours=3)).isoformat(),
-            },
-            format="json",
-        )
-        self.assertEqual(resp.status_code, status.HTTP_201_CREATED)
+        # In TestCase/APITestCase, on_commit callbacks won't run unless captured.
+        with self.captureOnCommitCallbacks(execute=True):
+            resp = self.client.post(
+                BASE,
+                data={
+                    "property_id": self.prop1.id,
+                    "mode": Auction.Mode.OPEN,
+                    "min_price": "1000.00",
+                    "start_date": start.isoformat(),
+                    "end_date": end.isoformat(),
+                },
+                format="json",
+            )
 
-        auction_id = resp.data["id"]
-        auc = Auction.objects.get(id=auction_id)
-        self.assertEqual(auc.owner_id, self.dev1.id)
-        self.assertEqual(auc.status, Auction.Status.ACTIVE)
-
-    def test_create_auction_sets_status_draft_when_start_in_future(self):
-        self.client.force_authenticate(user=self.dev1)
-        now = timezone.now()
-
-        resp = self.client.post(
-            BASE,
-            data={
-                "property_id": self.prop1.id,
-                "mode": Auction.Mode.OPEN,
-                "min_price": "1000.00",
-                "start_date": (now + timedelta(hours=2)).isoformat(),
-                "end_date": (now + timedelta(days=1)).isoformat(),
-            },
-            format="json",
-        )
         self.assertEqual(resp.status_code, status.HTTP_201_CREATED)
 
         auc = Auction.objects.get(id=resp.data["id"])
+        self.assertEqual(auc.owner_id, self.dev1.id)
         self.assertEqual(auc.status, Auction.Status.DRAFT)
+
+        # Ensure serializer output uses "property_id" alias
+        self.assertEqual(resp.data["property_id"], self.prop1.id)
+
+        # Ensure scheduling called after commit
+        schedule_mock.assert_called_once()
+        _, kwargs = schedule_mock.call_args
+        self.assertEqual(kwargs["auction_id"], auc.id)
+        self.assertEqual(kwargs["start_date"], auc.start_date)
+        self.assertEqual(kwargs["end_date"], auc.end_date)
 
     # -------------------------
     # LIST (GET /auctions/)
@@ -232,13 +255,14 @@ class AuctionAPITests(APITestCase):
                 prop=self.prop1,
                 mode=Auction.Mode.OPEN,
                 status_val=Auction.Status.DRAFT,
-                start=now + timedelta(hours=1),
+                start=now + timedelta(hours=2),
                 end=now + timedelta(days=1),
                 min_price=Decimal("1000.00"),
             )
 
         resp = self.client.get(BASE, format="json")
         self.assertEqual(resp.status_code, status.HTTP_200_OK)
+
         self.assertIn("count", resp.data)
         self.assertIn("results", resp.data)
         self.assertEqual(resp.data["count"], 21)
@@ -275,18 +299,19 @@ class AuctionAPITests(APITestCase):
         a1 = self._create_auction(
             owner=self.dev1,
             prop=self.prop1,
-            start=now + timedelta(hours=1),
+            start=now + timedelta(hours=2),
             end=now + timedelta(days=1),
         )
         self._create_auction(
             owner=self.dev2,
             prop=self.prop2,
-            start=now + timedelta(hours=1),
+            start=now + timedelta(hours=2),
             end=now + timedelta(days=1),
         )
 
         resp = self.client.get(
-            f"{BASE}?property_id={self.prop1.id}&owner_id={self.dev1.id}", format="json"
+            f"{BASE}?property_id={self.prop1.id}&owner_id={self.dev1.id}",
+            format="json",
         )
         self.assertEqual(resp.status_code, status.HTTP_200_OK)
         self.assertEqual(resp.data["count"], 1)
@@ -324,20 +349,67 @@ class AuctionAPITests(APITestCase):
         self.assertEqual(resp.data["count"], 1)
         self.assertEqual(resp.data["results"][0]["id"], active_auc.id)
 
+    def test_list_filters_by_ends_before_and_starts_after(self):
+        now = timezone.now()
+
+        # Should match ends_before
+        a1 = self._create_auction(
+            owner=self.dev1,
+            prop=self.prop1,
+            start=now + timedelta(hours=2),
+            end=now + timedelta(hours=5),
+        )
+        # Should NOT match ends_before (ends too late)
+        self._create_auction(
+            owner=self.dev1,
+            prop=self.prop1,
+            start=now + timedelta(hours=2),
+            end=now + timedelta(days=2),
+        )
+
+        ends_before = (now + timedelta(hours=6)).isoformat()
+        resp = self.client.get(BASE, data={"ends_before": ends_before}, format="json")
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        ids = [row["id"] for row in resp.data["results"]]
+        self.assertIn(a1.id, ids)
+
+        # starts_after should return only those starting after threshold
+        early = self._create_auction(
+            owner=self.dev1,
+            prop=self.prop1,
+            start=now + timedelta(hours=1),
+            end=now + timedelta(hours=10),
+        )
+        late = self._create_auction(
+            owner=self.dev1,
+            prop=self.prop1,
+            start=now + timedelta(hours=10),
+            end=now + timedelta(hours=20),
+        )
+
+        starts_after = (now + timedelta(hours=2)).isoformat()
+        resp2 = self.client.get(
+            BASE, data={"starts_after": starts_after}, format="json"
+        )
+        self.assertEqual(resp2.status_code, status.HTTP_200_OK)
+        ids2 = [row["id"] for row in resp2.data["results"]]
+        self.assertIn(late.id, ids2)
+        self.assertNotIn(early.id, ids2)
+
     def test_list_ordering_works(self):
         now = timezone.now()
         a1 = self._create_auction(
             owner=self.dev1,
             prop=self.prop1,
             current_price=Decimal("5000.00"),
-            start=now + timedelta(hours=1),
+            start=now + timedelta(hours=2),
             end=now + timedelta(days=1),
         )
         a2 = self._create_auction(
             owner=self.dev1,
             prop=self.prop1,
             current_price=Decimal("2000.00"),
-            start=now + timedelta(hours=1),
+            start=now + timedelta(hours=2),
             end=now + timedelta(days=1),
         )
 
@@ -345,7 +417,6 @@ class AuctionAPITests(APITestCase):
         self.assertEqual(resp.status_code, status.HTTP_200_OK)
 
         ids = [row["id"] for row in resp.data["results"]]
-        # a1 should appear before a2 when ordering by -current_price
         self.assertTrue(ids.index(a1.id) < ids.index(a2.id))
 
     # -------------------------
@@ -428,13 +499,13 @@ class AuctionAPITests(APITestCase):
         a1 = self._create_auction(
             owner=self.dev1,
             prop=self.prop1,
-            start=now + timedelta(hours=1),
+            start=now + timedelta(hours=2),
             end=now + timedelta(days=1),
         )
         self._create_auction(
             owner=self.dev2,
             prop=self.prop2,
-            start=now + timedelta(hours=1),
+            start=now + timedelta(hours=2),
             end=now + timedelta(days=1),
         )
 
@@ -445,25 +516,122 @@ class AuctionAPITests(APITestCase):
         self.assertIn(a1.id, ids)
         self.assertEqual(resp.data["count"], 1)
 
-    def test_my_auctions_supports_filters(self):
+    def test_my_auctions_supports_filters_and_ordering(self):
         now = timezone.now()
+
+        # dev1 owns both, but filter should return only CLOSED
         self._create_auction(
             owner=self.dev1,
             prop=self.prop1,
             mode=Auction.Mode.OPEN,
-            start=now + timedelta(hours=1),
+            current_price=Decimal("1000.00"),
+            start=now + timedelta(hours=2),
             end=now + timedelta(days=1),
         )
         closed = self._create_auction(
             owner=self.dev1,
             prop=self.prop1,
             mode=Auction.Mode.CLOSED,
-            start=now + timedelta(hours=1),
+            current_price=Decimal("5000.00"),
+            start=now + timedelta(hours=2),
             end=now + timedelta(days=1),
         )
 
         self.client.force_authenticate(user=self.dev1)
-        resp = self.client.get(f"{MY_BASE}?mode=closed", format="json")
+        resp = self.client.get(
+            f"{MY_BASE}?mode=closed&ordering=-current_price", format="json"
+        )
         self.assertEqual(resp.status_code, status.HTTP_200_OK)
         self.assertEqual(resp.data["count"], 1)
         self.assertEqual(resp.data["results"][0]["id"], closed.id)
+
+    # -------------------------
+    # CANCEL (DELETE /auctions/:id/cancel/)
+    # -------------------------
+
+    def test_cancel_requires_auth(self):
+        auc = self._create_auction(owner=self.dev1, prop=self.prop1)
+        resp = self.client.delete(f"{BASE}{auc.id}{CANCEL_SUFFIX}", format="json")
+        self.assertEqual(resp.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_cancel_requires_owner_or_admin(self):
+        auc = self._create_auction(owner=self.dev1, prop=self.prop1)
+
+        self.client.force_authenticate(user=self.dev2)
+        resp = self.client.delete(f"{BASE}{auc.id}{CANCEL_SUFFIX}", format="json")
+        self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)
+
+    @patch("auctions.views.cancel_auction_status_tasks")
+    def test_cancel_owner_success_far_from_start(self, cancel_tasks_mock):
+        now = timezone.now()
+        auc = self._create_auction(
+            owner=self.dev1,
+            prop=self.prop1,
+            start=now + timedelta(hours=5),
+            end=now + timedelta(days=1),
+            status_val=Auction.Status.DRAFT,
+        )
+
+        self.client.force_authenticate(user=self.dev1)
+
+        with self.captureOnCommitCallbacks(execute=True):
+            resp = self.client.delete(f"{BASE}{auc.id}{CANCEL_SUFFIX}", format="json")
+
+        self.assertEqual(resp.status_code, status.HTTP_204_NO_CONTENT)
+
+        auc.refresh_from_db()
+        self.assertEqual(auc.status, Auction.Status.CANCELLED)
+
+        cancel_tasks_mock.assert_called_once_with(auction_id=auc.id)
+
+    def test_cancel_within_10_minutes_only_admin_can_cancel(self):
+        now = timezone.now()
+        auc = self._create_auction(
+            owner=self.dev1,
+            prop=self.prop1,
+            start=now + timedelta(minutes=5),
+            end=now + timedelta(hours=2),
+            status_val=Auction.Status.DRAFT,
+        )
+
+        # Owner is NOT admin -> forbidden
+        self.client.force_authenticate(user=self.dev1)
+        resp = self.client.delete(f"{BASE}{auc.id}{CANCEL_SUFFIX}", format="json")
+        self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)
+
+        # Admin can cancel
+        self.client.force_authenticate(user=self.admin)
+        resp2 = self.client.delete(f"{BASE}{auc.id}{CANCEL_SUFFIX}", format="json")
+        self.assertEqual(resp2.status_code, status.HTTP_204_NO_CONTENT)
+
+        auc.refresh_from_db()
+        self.assertEqual(auc.status, Auction.Status.CANCELLED)
+
+    def test_cancel_after_start_is_forbidden_for_everyone(self):
+        now = timezone.now()
+        auc = self._create_auction(
+            owner=self.dev1,
+            prop=self.prop1,
+            start=now - timedelta(minutes=1),
+            end=now + timedelta(hours=2),
+            status_val=Auction.Status.ACTIVE,
+        )
+
+        # Even admin cannot cancel after start
+        self.client.force_authenticate(user=self.admin)
+        resp = self.client.delete(f"{BASE}{auc.id}{CANCEL_SUFFIX}", format="json")
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_cancel_already_cancelled_returns_404(self):
+        now = timezone.now()
+        auc = self._create_auction(
+            owner=self.dev1,
+            prop=self.prop1,
+            start=now + timedelta(hours=5),
+            end=now + timedelta(days=1),
+            status_val=Auction.Status.CANCELLED,
+        )
+
+        self.client.force_authenticate(user=self.dev1)
+        resp = self.client.delete(f"{BASE}{auc.id}{CANCEL_SUFFIX}", format="json")
+        self.assertEqual(resp.status_code, status.HTTP_404_NOT_FOUND)
