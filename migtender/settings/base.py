@@ -46,6 +46,7 @@ INSTALLED_APPS = [
     "drf_spectacular_sidecar",
     "django_filters",
     "corsheaders",
+    "django_celery_beat",
     # my apps
     "users",
     "properties",
@@ -112,6 +113,19 @@ CACHES = {
         "KEY_PREFIX": "migtender",
     }
 }
+
+
+# Celery
+
+CELERY_BEAT_SCHEDULER = "django_celery_beat.schedulers:DatabaseScheduler"
+
+# Example (adjust to your env)
+CELERY_BROKER_URL = f"redis://{REDIS_URL}/0"
+CELERY_RESULT_BACKEND = f"redis://{REDIS_URL}/1"
+CELERY_ACCEPT_CONTENT = ["json"]
+CELERY_TASK_SERIALIZER = "json"
+CELERY_RESULT_SERIALIZER = "json"
+CELERY_TIMEZONE = "UTC"
 
 
 # Password validation
