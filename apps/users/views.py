@@ -244,9 +244,10 @@ class RegisterBrokerView(generics.GenericAPIView):
             payload = RegisterResponseSerializer.build_payload(user)
             return Response(payload, status=status.HTTP_201_CREATED)
 
-        except IntegrityError:
+        except IntegrityError as e:
+            print(e)
             return Response(
-                {"error": _("User already exists.")},
+                {"error": f"{e}"},
                 status=status.HTTP_409_CONFLICT,
             )
 
