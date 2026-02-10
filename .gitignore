@@ -7,5 +7,7 @@ media/
 dump.rdb
 logs/
 
+staticfiles/
+
 github_actions_deploy.pub
 github_actions_deploy
