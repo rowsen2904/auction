@@ -40,6 +40,7 @@ INSTALLED_APPS = [
     "django.contrib.messages",
     "django.contrib.staticfiles",
     # 3rd party apps
+    "channels",
     "rest_framework",
     "rest_framework_simplejwt",
     "drf_spectacular",
@@ -83,6 +84,7 @@ TEMPLATES = [
 ]
 
 WSGI_APPLICATION = "migtender.wsgi.application"
+ASGI_APPLICATION = "migtender.asgi.application"
 
 
 # Database
@@ -106,7 +108,7 @@ REDIS_URL = os.getenv("REDIS_URL")
 CACHES = {
     "default": {
         "BACKEND": "django_redis.cache.RedisCache",
-        "LOCATION": f"redis://{REDIS_URL}",
+        "LOCATION": os.getenv("CACHE_REDIS_URL"),
         "OPTIONS": {
             "CLIENT_CLASS": "django_redis.client.DefaultClient",
         },
@@ -120,12 +122,24 @@ CACHES = {
 CELERY_BEAT_SCHEDULER = "django_celery_beat.schedulers:DatabaseScheduler"
 
 # Example (adjust to your env)
-CELERY_BROKER_URL = f"redis://{REDIS_URL}/0"
-CELERY_RESULT_BACKEND = f"redis://{REDIS_URL}/1"
+CELERY_BROKER_URL = os.getenv("CELERY_BROKER_URL")
+CELERY_RESULT_BACKEND = os.getenv("CELERY_RESULT_BACKEND")
 CELERY_ACCEPT_CONTENT = ["json"]
 CELERY_TASK_SERIALIZER = "json"
 CELERY_RESULT_SERIALIZER = "json"
 CELERY_TIMEZONE = "UTC"
+
+
+# Channels
+
+CHANNEL_LAYERS = {
+    "default": {
+        "BACKEND": "channels_redis.core.RedisChannelLayer",
+        "CONFIG": {
+            "hosts": [os.getenv("CHANNEL_REDIS_URL")],
+        },
+    },
+}
 
 
 # Password validation

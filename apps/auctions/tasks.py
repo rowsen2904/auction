@@ -8,6 +8,7 @@ from django.utils import timezone
 from django_celery_beat.models import ClockedSchedule, PeriodicTask
 
 from .models import Auction
+from .realtime import broadcast_auction_status
 
 
 def _activate_task_name(auction_id: int) -> str:
@@ -89,6 +90,17 @@ def activate_auction(self, auction_id: int) -> None:
 
         auction.status = Auction.Status.ACTIVE
         auction.save(update_fields=["status", "updated_at"])
+        broadcast_auction_status(
+            auction_id=auction.id,
+            payload={
+                "auction": {
+                    "id": auction.id,
+                    "status": auction.status,
+                    "updated_at": auction.updated_at.isoformat(),
+                    # optionally: winner_bid_id / highest_bid_id / current_price...
+                }
+            },
+        )
 
 
 @shared_task(bind=True, ignore_result=True)
@@ -122,3 +134,14 @@ def finish_auction(self, auction_id: int) -> None:
 
         auction.status = Auction.Status.FINISHED
         auction.save(update_fields=["winner_bid_id", "status", "updated_at"])
+        broadcast_auction_status(
+            auction_id=auction.id,
+            payload={
+                "auction": {
+                    "id": auction.id,
+                    "status": auction.status,
+                    "updated_at": auction.updated_at.isoformat(),
+                    # optionally: winner_bid_id / highest_bid_id / current_price...
+                }
+            },
+        )
