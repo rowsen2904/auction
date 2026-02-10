@@ -16,6 +16,10 @@ SIMPLE_JWT = {
     "REFRESH_TOKEN_LIFETIME": timedelta(days=30),
 }
 
+
+MIDDLEWARE += ["whitenoise.middleware.WhiteNoiseMiddleware"]
+
+
 # Email
 EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
 
