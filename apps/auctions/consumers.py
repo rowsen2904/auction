@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal
 
 from asgiref.sync import sync_to_async
 from channels.generic.websocket import AsyncJsonWebsocketConsumer
@@ -8,6 +8,8 @@ from django.db import transaction
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework.exceptions import ValidationError
+
+from migtender.settings import BID_STEP
 
 from .models import Auction, Bid
 from .serializers import BidSerializer
@@ -64,11 +66,7 @@ def _get_last_bids(auction_id: int, limit: int = 50) -> list[dict]:
 
 
 @sync_to_async
-def _create_bid_atomic(*, auction_id: int, user, amount: Decimal) -> tuple[dict, dict]:
-    """
-    Create a bid with race protection and update cached fields.
-    Returns (auction_patch, bid_data).
-    """
+def _create_bid_atomic(*, auction_id: int, user) -> tuple[dict, dict]:
     now = timezone.now()
 
     with transaction.atomic():
@@ -89,7 +87,6 @@ def _create_bid_atomic(*, auction_id: int, user, amount: Decimal) -> tuple[dict,
             pk=auction_id,
         )
 
-        # Only OPEN auctions are supported via WebSocket
         if auction.mode != Auction.Mode.OPEN:
             raise ValidationError(
                 {"detail": "WebSocket bidding is allowed only for OPEN auctions."}
@@ -106,12 +103,26 @@ def _create_bid_atomic(*, auction_id: int, user, amount: Decimal) -> tuple[dict,
         if user.id == auction.owner_id:
             raise ValidationError({"detail": "Owner cannot bid on their own auction."})
 
-        if amount < auction.min_price:
-            raise ValidationError({"detail": "Bid amount is below min_price."})
+        # ✅ NEW: if the highest bid is already user's, do not allow bidding again
+        if auction.highest_bid_id:
+            highest_broker_id = (
+                Bid.objects.filter(id=auction.highest_bid_id)
+                .values_list("broker_id", flat=True)
+                .first()
+            )
+            if highest_broker_id == user.id:
+                raise ValidationError({"detail": "You already have the highest bid."})
 
-        # OPEN: must be strictly higher than current_price
-        if amount <= auction.current_price:
-            raise ValidationError({"detail": "Bid must be higher than current price."})
+        # Compute amount server-side
+        base = (
+            auction.current_price
+            if auction.current_price > Decimal("0")
+            else auction.min_price
+        )
+        amount = base + BID_STEP
+
+        if amount < auction.min_price:
+            amount = auction.min_price + BID_STEP
 
         bid = Bid.objects.create(
             auction_id=auction.id,
@@ -148,7 +159,7 @@ class AuctionLiveBidConsumer(AsyncJsonWebsocketConsumer):
     """
     Live bids for OPEN auctions.
     Client messages:
-      { "type": "bid", "amount": "2500.00" }
+      { "type": "bid"}
 
     Server broadcasts:
       { "type": "bid_created", "auction": {...}, "bid": {...} }
@@ -196,26 +207,16 @@ class AuctionLiveBidConsumer(AsyncJsonWebsocketConsumer):
             )
             return
 
-        # Your IsBroker permission uses user.is_broker
         if not getattr(user, "is_broker", False):
             await self.send_json({"type": "error", "detail": "Only broker can bid."})
-            return
-
-        raw_amount = content.get("amount")
-        try:
-            amount = Decimal(str(raw_amount))
-        except (InvalidOperation, TypeError):
-            await self.send_json({"type": "error", "detail": "Invalid amount."})
             return
 
         try:
             auction_patch, bid_data = await _create_bid_atomic(
                 auction_id=self.auction_id,
                 user=user,
-                amount=amount,
             )
         except ValidationError as e:
-            # DRF ValidationError -> return readable error
             detail = e.detail if hasattr(e, "detail") else {"detail": str(e)}
             await self.send_json({"type": "error", "detail": detail})
             return
@@ -223,7 +224,6 @@ class AuctionLiveBidConsumer(AsyncJsonWebsocketConsumer):
             await self.send_json({"type": "error", "detail": "Internal error."})
             return
 
-        # Broadcast to everyone watching this auction
         await self.channel_layer.group_send(
             self.group_name,
             {
