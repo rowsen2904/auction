@@ -1,3 +1,4 @@
+# apps/auctions/models.py
 from __future__ import annotations
 
 from decimal import Decimal
@@ -21,7 +22,6 @@ class Auction(models.Model):
         CANCELLED = "cancelled", "Cancelled"
 
     # Property being auctioned
-    # Named real_property to resolve conflict with property decorator
     real_property = models.ForeignKey(
         "properties.Property",
         on_delete=models.CASCADE,
@@ -55,10 +55,10 @@ class Auction(models.Model):
         db_index=True,
     )
 
-    # Denormalized counters for fast reads (avoid COUNT/MAX on every request)
+    # Denormalized counters for fast reads
     bids_count = models.PositiveIntegerField(default=0)
 
-    # Cached current highest amount (useful for open auctions and WS updates)
+    # Cached current highest amount (OPEN auctions live, CLOSED optional)
     current_price = models.DecimalField(
         max_digits=14,
         decimal_places=2,
@@ -66,7 +66,7 @@ class Auction(models.Model):
         db_index=True,
     )
 
-    # Points to the highest bid (for open mode real-time)
+    # Highest bid pointer (mainly OPEN)
     highest_bid = models.ForeignKey(
         "Bid",
         null=True,
@@ -75,7 +75,7 @@ class Auction(models.Model):
         related_name="as_highest_for_auctions",
     )
 
-    # Selected winner bid (manual for closed / auto for open on finalize)
+    # Winner bid pointer (OPEN: auto highest at finish; CLOSED: may be set later/manual)
     winner_bid = models.ForeignKey(
         "Bid",
         null=True,
@@ -84,12 +84,19 @@ class Auction(models.Model):
         related_name="as_winner_for_auctions",
     )
 
+    shortlisted_bids = models.ManyToManyField(
+        "auctions.Bid",
+        blank=True,
+        related_name="shortlisted_in_auctions",
+    )
+
     created_at = models.DateTimeField(default=timezone.now, db_index=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         ordering = ["-created_at"]
         indexes = [
+            # list/filter + background finishing queries
             models.Index(fields=["status", "end_date"], name="auc_status_end_idx"),
             models.Index(
                 fields=["mode", "status", "end_date"], name="auc_mode_status_end_idx"
@@ -97,6 +104,8 @@ class Auction(models.Model):
             models.Index(
                 fields=["real_property", "-created_at"], name="auc_prop_created_idx"
             ),
+            # optional but often useful when listing my auctions / sorting
+            models.Index(fields=["owner", "-created_at"], name="auc_owner_created_idx"),
         ]
         constraints = [
             models.CheckConstraint(
@@ -127,7 +136,6 @@ class Bid(models.Model):
         related_name="bids",
     )
 
-    # Broker who placed the bid
     broker = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.PROTECT,
@@ -141,21 +149,36 @@ class Bid(models.Model):
         db_index=True,
     )
 
+    # Marks bids that belong to SEALED/CLOSED auctions (one bid per broker per auction)
+    # This allows a partial unique constraint for sealed only.
+    is_sealed = models.BooleanField(default=False, db_index=True)
+
     created_at = models.DateTimeField(default=timezone.now, db_index=True)
 
     class Meta:
         ordering = ["-created_at"]
         indexes = [
+            # last bids for open auctions and general history
             models.Index(fields=["auction", "-created_at"], name="bid_auc_created_idx"),
+            # compute highest quickly (and for admin checks/recalc)
             models.Index(fields=["auction", "-amount"], name="bid_auc_amount_idx"),
+            # broker history
             models.Index(
                 fields=["broker", "-created_at"], name="bid_broker_created_idx"
             ),
+            # fast existence checks / joins for sealed logic (optional but practical)
+            models.Index(fields=["auction", "broker"], name="bid_auc_broker_idx"),
         ]
         constraints = [
             models.CheckConstraint(
                 check=Q(amount__gt=Decimal("0.00")),
                 name="bid_amount_gt_0",
+            ),
+            # One sealed bid per broker per auction (Postgres will create a partial unique index)
+            models.UniqueConstraint(
+                fields=["auction", "broker"],
+                condition=Q(is_sealed=True),
+                name="bid_unique_sealed_per_broker_per_auction",
             ),
         ]
 

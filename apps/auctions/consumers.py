@@ -1,26 +1,30 @@
 from __future__ import annotations
 
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 
-from asgiref.sync import sync_to_async
+from channels.db import database_sync_to_async
 from channels.generic.websocket import AsyncJsonWebsocketConsumer
 from django.db import transaction
 from django.shortcuts import get_object_or_404
-from django.utils import timezone
 from rest_framework.exceptions import ValidationError
 
-from migtender.settings import BID_STEP
-
 from .models import Auction, Bid
+from .participants import add_participant_with_flag, list_participants
 from .serializers import BidSerializer
+from .services.rules import (
+    ctx_for,
+    ensure_active_window,
+    ensure_min_price,
+    ensure_mode,
+    ensure_not_current_leader,
+    ensure_not_owner,
+    open_compute_amount,
+)
 
 
-@sync_to_async
-def _get_auction_snapshot(auction_id: int) -> dict:
-    """
-    Return minimal auction snapshot for initial payload.
-    """
-    auction = get_object_or_404(
+@database_sync_to_async
+def _auction_snapshot(auction_id: int) -> dict:
+    a = get_object_or_404(
         Auction.objects.only(
             "id",
             "mode",
@@ -36,49 +40,61 @@ def _get_auction_snapshot(auction_id: int) -> dict:
         ),
         pk=auction_id,
     )
-
     return {
-        "id": auction.id,
-        "mode": auction.mode,
-        "status": auction.status,
-        "min_price": str(auction.min_price),
-        "start_date": auction.start_date.isoformat(),
-        "end_date": auction.end_date.isoformat(),
-        "bids_count": auction.bids_count,
-        "current_price": str(auction.current_price),
-        "highest_bid_id": auction.highest_bid_id,
-        "owner_id": auction.owner_id,
-        "updated_at": auction.updated_at.isoformat(),
+        "id": a.id,
+        "mode": a.mode,
+        "status": a.status,
+        "min_price": str(a.min_price),
+        "start_date": a.start_date.isoformat(),
+        "end_date": a.end_date.isoformat(),
+        "bids_count": a.bids_count,
+        "current_price": str(a.current_price),
+        "highest_bid_id": a.highest_bid_id,
+        "owner_id": a.owner_id,
+        "updated_at": a.updated_at.isoformat(),
     }
 
 
-@sync_to_async
-def _get_last_bids(auction_id: int, limit: int = 50) -> list[dict]:
-    """
-    Return last N bids for OPEN auction (public).
-    """
+@database_sync_to_async
+def _last_bids(auction_id: int, limit: int = 50) -> list[dict]:
     qs = (
         Bid.objects.filter(auction_id=auction_id)
         .select_related("broker")
+        .only("id", "auction_id", "broker_id", "amount", "created_at")
         .order_by("-created_at")[:limit]
     )
     return BidSerializer(qs, many=True).data
 
 
-@sync_to_async
-def _create_bid_atomic(*, auction_id: int, user) -> tuple[dict, dict]:
-    now = timezone.now()
+@database_sync_to_async
+def _participants_snapshot(auction_id: int) -> list[int]:
+    # Redis call in a thread
+    return list_participants(auction_id=auction_id)
 
+
+@database_sync_to_async
+def _create_open_bid_atomic(
+    *,
+    auction_id: int,
+    user,
+    requested_amount: Decimal,
+) -> tuple[dict, dict, dict | None]:
+    """
+    Creates OPEN bid with DB lock + updates cache.
+    Auto-joins participant in Redis on successful bid creation.
+    Returns:
+      (auction_patch, bid_data, participant_event_or_none)
+    """
     with transaction.atomic():
         auction = get_object_or_404(
             Auction.objects.select_for_update().only(
                 "id",
                 "owner_id",
                 "mode",
+                "status",
                 "min_price",
                 "start_date",
                 "end_date",
-                "status",
                 "bids_count",
                 "current_price",
                 "highest_bid_id",
@@ -87,50 +103,28 @@ def _create_bid_atomic(*, auction_id: int, user) -> tuple[dict, dict]:
             pk=auction_id,
         )
 
-        if auction.mode != Auction.Mode.OPEN:
-            raise ValidationError(
-                {"detail": "WebSocket bidding is allowed only for OPEN auctions."}
-            )
+        ctx = ctx_for(auction=auction, user=user)
 
-        if auction.status != Auction.Status.ACTIVE:
-            raise ValidationError({"detail": "Auction is not active."})
-
-        if not (auction.start_date <= now < auction.end_date):
-            raise ValidationError(
-                {"detail": "Auction is not within active time window."}
-            )
-
-        if user.id == auction.owner_id:
-            raise ValidationError({"detail": "Owner cannot bid on their own auction."})
-
-        # ✅ NEW: if the highest bid is already user's, do not allow bidding again
-        if auction.highest_bid_id:
-            highest_broker_id = (
-                Bid.objects.filter(id=auction.highest_bid_id)
-                .values_list("broker_id", flat=True)
-                .first()
-            )
-            if highest_broker_id == user.id:
-                raise ValidationError({"detail": "You already have the highest bid."})
-
-        # Compute amount server-side
-        base = (
-            auction.current_price
-            if auction.current_price > Decimal("0")
-            else auction.min_price
+        ensure_mode(
+            ctx,
+            allowed={Auction.Mode.OPEN},
+            message="WebSocket bidding is allowed only for OPEN auctions.",
         )
-        amount = base + BID_STEP
+        ensure_active_window(ctx)
+        ensure_not_owner(ctx)
+        ensure_not_current_leader(auction=auction, user_id=user.id)
 
-        if amount < auction.min_price:
-            amount = auction.min_price + BID_STEP
+        amount = open_compute_amount(auction=auction, requested=requested_amount)
+        ensure_min_price(ctx, amount=amount)
 
         bid = Bid.objects.create(
             auction_id=auction.id,
             broker=user,
             amount=amount,
+            is_sealed=False,
         )
 
-        auction.bids_count = auction.bids_count + 1
+        auction.bids_count += 1
         auction.current_price = amount
         auction.highest_bid_id = bid.id
         auction.save(
@@ -142,6 +136,21 @@ def _create_bid_atomic(*, auction_id: int, user) -> tuple[dict, dict]:
             ]
         )
 
+        # Auto-join on bid (Redis)
+        is_new, cnt = add_participant_with_flag(
+            auction_id=auction.id,
+            user_id=user.id,
+            end_date=auction.end_date,
+        )
+
+        participant_event = None
+        if is_new:
+            participant_event = {
+                "auction_id": auction.id,
+                "user_id": user.id,
+                "participants_count": cnt,
+            }
+
         auction_patch = {
             "id": auction.id,
             "bids_count": auction.bids_count,
@@ -150,18 +159,20 @@ def _create_bid_atomic(*, auction_id: int, user) -> tuple[dict, dict]:
             "updated_at": auction.updated_at.isoformat(),
         }
 
-        bid_data = BidSerializer(bid).data
-
-    return auction_patch, bid_data
+        return auction_patch, BidSerializer(bid).data, participant_event
 
 
 class AuctionLiveBidConsumer(AsyncJsonWebsocketConsumer):
     """
-    Live bids for OPEN auctions.
-    Client messages:
-      { "type": "bid"}
+    WS: /ws/auctions/<auction_id>/
 
-    Server broadcasts:
+    Client:
+      { "type": "bid", "amount": "2500000.00" }
+
+    Server:
+      { "type": "auction_snapshot", "auction": {...}, "bids": [...] }
+      { "type": "participants_snapshot", "participants": [..] }
+      { "type": "participant_joined", "auction_id": 1, "user_id": 10, "participants_count": 5 }
       { "type": "bid_created", "auction": {...}, "bid": {...} }
     """
 
@@ -169,10 +180,7 @@ class AuctionLiveBidConsumer(AsyncJsonWebsocketConsumer):
         self.auction_id = int(self.scope["url_route"]["kwargs"]["auction_id"])
         self.group_name = f"auction_{self.auction_id}"
 
-        # Allow anyone to WATCH open auction, but only brokers can place bids.
-        snapshot = await _get_auction_snapshot(self.auction_id)
-
-        # If auction is not OPEN, block WS completely (you said closed will be HTTP)
+        snapshot = await _auction_snapshot(self.auction_id)
         if snapshot["mode"] != Auction.Mode.OPEN:
             await self.close(code=4403)
             return
@@ -180,8 +188,9 @@ class AuctionLiveBidConsumer(AsyncJsonWebsocketConsumer):
         await self.channel_layer.group_add(self.group_name, self.channel_name)
         await self.accept()
 
-        # Send initial state
-        bids = await _get_last_bids(self.auction_id, limit=50)
+        bids = await _last_bids(self.auction_id, limit=50)
+        participants = await _participants_snapshot(self.auction_id)
+
         await self.send_json(
             {
                 "type": "auction_snapshot",
@@ -189,14 +198,18 @@ class AuctionLiveBidConsumer(AsyncJsonWebsocketConsumer):
                 "bids": bids,
             }
         )
+        await self.send_json(
+            {
+                "type": "participants_snapshot",
+                "participants": participants,
+            }
+        )
 
     async def disconnect(self, code):
         await self.channel_layer.group_discard(self.group_name, self.channel_name)
 
     async def receive_json(self, content, **kwargs):
-        msg_type = content.get("type")
-
-        if msg_type != "bid":
+        if content.get("type") != "bid":
             await self.send_json({"type": "error", "detail": "Unknown message type."})
             return
 
@@ -206,41 +219,57 @@ class AuctionLiveBidConsumer(AsyncJsonWebsocketConsumer):
                 {"type": "error", "detail": "Authentication required."}
             )
             return
-
         if not getattr(user, "is_broker", False):
             await self.send_json({"type": "error", "detail": "Only broker can bid."})
             return
 
+        raw_amount = content.get("amount")
         try:
-            auction_patch, bid_data = await _create_bid_atomic(
+            requested_amount = Decimal(str(raw_amount))
+        except (InvalidOperation, TypeError):
+            await self.send_json({"type": "error", "detail": "Invalid amount."})
+            return
+
+        try:
+            auction_patch, bid_data, participant_event = await _create_open_bid_atomic(
                 auction_id=self.auction_id,
                 user=user,
+                requested_amount=requested_amount,
             )
         except ValidationError as e:
-            detail = e.detail if hasattr(e, "detail") else {"detail": str(e)}
-            await self.send_json({"type": "error", "detail": detail})
+            await self.send_json({"type": "error", "detail": e.detail})
             return
         except Exception:
             await self.send_json({"type": "error", "detail": "Internal error."})
             return
 
+        # If participant is new -> notify everyone in realtime
+        if participant_event:
+            await self.channel_layer.group_send(
+                self.group_name,
+                {"type": "participant_joined", "payload": participant_event},
+            )
+
         await self.channel_layer.group_send(
             self.group_name,
-            {
-                "type": "bid_created",
-                "auction": auction_patch,
-                "bid": bid_data,
-            },
+            {"type": "bid_created", "auction": auction_patch, "bid": bid_data},
         )
 
     async def bid_created(self, event):
         await self.send_json(
-            {
-                "type": "bid_created",
-                "auction": event["auction"],
-                "bid": event["bid"],
-            }
+            {"type": "bid_created", "auction": event["auction"], "bid": event["bid"]}
         )
 
     async def auction_updated(self, event):
         await self.send_json({"type": "auction_updated", **event["payload"]})
+
+    async def participant_joined(self, event):
+        p = event["payload"]
+        await self.send_json(
+            {
+                "type": "participant_joined",
+                "auction_id": p["auction_id"],
+                "user_id": p["user_id"],
+                "participants_count": p["participants_count"],
+            }
+        )

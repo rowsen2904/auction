@@ -13,6 +13,7 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 import os
 import sys
 from datetime import timedelta
+from decimal import Decimal
 from pathlib import Path
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -115,19 +116,6 @@ CACHES = {
         "KEY_PREFIX": "migtender",
     }
 }
-
-
-# Celery
-
-CELERY_BEAT_SCHEDULER = "django_celery_beat.schedulers:DatabaseScheduler"
-
-# Example (adjust to your env)
-CELERY_BROKER_URL = os.getenv("CELERY_BROKER_URL")
-CELERY_RESULT_BACKEND = os.getenv("CELERY_RESULT_BACKEND")
-CELERY_ACCEPT_CONTENT = ["json"]
-CELERY_TASK_SERIALIZER = "json"
-CELERY_RESULT_SERIALIZER = "json"
-CELERY_TIMEZONE = "UTC"
 
 
 # Channels
@@ -293,3 +281,28 @@ LOGGING = {
         },
     },
 }
+
+
+# Celery
+CELERY_BEAT_SCHEDULER = "django_celery_beat.schedulers:DatabaseScheduler"
+
+# Example (adjust to your env)
+CELERY_BROKER_URL = os.getenv("CELERY_BROKER_URL")
+CELERY_RESULT_BACKEND = os.getenv("CELERY_RESULT_BACKEND")
+CELERY_ACCEPT_CONTENT = ["json"]
+CELERY_TASK_SERIALIZER = "json"
+CELERY_RESULT_SERIALIZER = "json"
+CELERY_TIMEZONE = TIME_ZONE
+CELERY_ENABLE_UTC = True
+
+
+# TODO: Must set these
+# Auction timing rules
+AUCTION_MIN_START_OFFSET = timedelta(seconds=1)  # start must be at least +1h from now
+AUCTION_MIN_DURATION = timedelta(seconds=1)  # min duration
+AUCTION_MAX_DURATION = timedelta(days=30)  # max duration
+# <=10 min to start => only admin can cancel
+AUCTION_CANCEL_LOCK_BEFORE_START = timedelta(minutes=10)
+
+# OPEN auction bidding rules
+OPEN_BID_MIN_INCREMENT = Decimal("150000.00")

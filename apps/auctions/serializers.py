@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import timedelta
 from decimal import Decimal
 
+from django.conf import settings
 from django.db import transaction
 from django.utils import timezone
 from properties.models import Property
@@ -50,7 +51,6 @@ class AuctionListSerializer(serializers.ModelSerializer):
 
 
 class AuctionCreateSerializer(serializers.ModelSerializer):
-    # API accepts property_id, but model field is real_property
     property_id = serializers.PrimaryKeyRelatedField(
         source="real_property",
         queryset=Property.objects.all(),
@@ -66,9 +66,13 @@ class AuctionCreateSerializer(serializers.ModelSerializer):
         end = attrs.get("end_date")
         now = timezone.now()
 
-        if start and start < now + timedelta(hours=1):
+        min_offset = getattr(settings, "AUCTION_MIN_START_OFFSET", timedelta(hours=1))
+        min_dur = getattr(settings, "AUCTION_MIN_DURATION", timedelta(hours=1))
+        max_dur = getattr(settings, "AUCTION_MAX_DURATION", timedelta(days=30))
+
+        if start and start < now + min_offset:
             raise serializers.ValidationError(
-                {"start_date": "start_date must be at least 1 hour from now."}
+                {"start_date": f"start_date must be at least {min_offset} from now."}
             )
 
         if start and end and end <= start:
@@ -76,16 +80,20 @@ class AuctionCreateSerializer(serializers.ModelSerializer):
                 {"end_date": "end_date must be greater than start_date."}
             )
 
-        # Extra safety (optional)
-        if end and end <= now:
-            raise serializers.ValidationError(
-                {"end_date": "end_date must be in the future."}
-            )
+        if start and end:
+            dur = end - start
+            if dur < min_dur:
+                raise serializers.ValidationError(
+                    {"end_date": f"duration must be at least {min_dur}."}
+                )
+            if dur > max_dur:
+                raise serializers.ValidationError(
+                    {"end_date": f"duration must be at most {max_dur}."}
+                )
 
         return attrs
 
     def validate_property_id(self, prop: Property):
-        # Only allow creating auctions for properties owned by the developer
         request = self.context["request"]
         if prop.owner_id != request.user.id:
             raise serializers.ValidationError(
@@ -95,26 +103,19 @@ class AuctionCreateSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         request = self.context["request"]
-
-        # Always create as DRAFT (it will become ACTIVE via beat at start_date)
         auction = Auction.objects.create(
             owner=request.user,
             status=Auction.Status.DRAFT,
             **validated_data,
         )
 
-        # Create beat tasks only after DB commit (no orphan tasks on rollback)
-        start_date = auction.start_date
-        end_date = auction.end_date
-
         transaction.on_commit(
             lambda: schedule_auction_status_tasks(
                 auction_id=auction.id,
-                start_date=start_date,
-                end_date=end_date,
+                start_date=auction.start_date,
+                end_date=auction.end_date,
             )
         )
-
         return auction
 
 
@@ -151,5 +152,24 @@ class BidCreateSerializer(serializers.Serializer):
     )
 
 
-class SelectWinnerSerializer(serializers.Serializer):
+class BidUpdateSerializer(serializers.Serializer):
+    amount = serializers.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+        min_value=Decimal("0.01"),
+    )
+
+
+class ParticipantsListSerializer(serializers.Serializer):
+    auction_id = serializers.IntegerField()
+    participants = serializers.ListField(child=serializers.IntegerField())
+
+
+class ClosedShortlistSerializer(serializers.Serializer):
+    bid_ids = serializers.ListField(
+        child=serializers.IntegerField(min_value=1), allow_empty=False
+    )
+
+
+class ClosedSelectWinnerSerializer(serializers.Serializer):
     bid_id = serializers.IntegerField(min_value=1)

@@ -15,37 +15,32 @@ from .serializers import (
     AuctionListSerializer,
     BidCreateSerializer,
     BidSerializer,
-    SelectWinnerSerializer,
+    BidUpdateSerializer,
+    ClosedSelectWinnerSerializer,
+    ClosedShortlistSerializer,
+    ParticipantsListSerializer,
 )
 
-# If you already have a shared DRF "detail" error serializer, import it here.
-# Otherwise this fallback keeps schema generation working.
-try:
-    from core.serializers import DRFDetailErrorSerializer  # type: ignore
-except Exception:  # pragma: no cover
 
-    class DRFDetailErrorSerializer(serializers.Serializer):
-        detail = serializers.CharField()
+# Fallback detail serializer for errors
+class DRFDetailErrorSerializer(serializers.Serializer):
+    detail = serializers.CharField()
 
-
-# ----------------------------
-# Docs (optional text blobs)
-# ----------------------------
 
 AUCTION_LIST_DOC = """
-Returns a paginated list of auctions.
+List auctions.
 
 Filters:
 - mode: open | closed
 - status: draft | active | finished | cancelled
-- property_id / propertyId: filter by property
-- owner_id: filter by developer (auction owner)
-- active=true: active auctions right now (status=active and start<=now<end)
-- starts_before / starts_after: ISO datetime filters for start_date
-- ends_before / ends_after: ISO datetime filters for end_date
+- property_id / propertyId
+- owner_id
+- active=true (status=active and start<=now<end)
+- starts_before / starts_after (ISO datetime)
+- ends_before / ends_after (ISO datetime)
 
 Ordering:
-- ordering: created_at, start_date, end_date, current_price, bids_count (prefix with '-' for desc)
+- ordering: created_at, start_date, end_date, current_price, bids_count (prefix '-' for desc)
 
 Pagination:
 - page, page_size
@@ -55,51 +50,71 @@ AUCTION_CREATE_DOC = """
 Create an auction.
 
 Only authenticated developers can create auctions.
-property_id must belong to the current developer.
+property_id must belong to current developer.
+Auction is created as DRAFT; Celery beat will activate at start_date.
 """
 
 AUCTION_DETAIL_DOC = """
-Return auction details.
-For OPEN auctions, last 50 bids are public.
-For CLOSED auctions, bids are visible only to auction owner.
-"""
+Auction details.
 
-MY_AUCTIONS_DOC = """
-Return auctions created by the current authenticated developer (owner=request.user).
-Supports the same filters and ordering as the public list.
-"""
-
-AUCTION_BID_DOC = """
-Place a bid for an auction.
-
-Rules:
-- auction must be ACTIVE and within start/end time
-- broker must be authenticated (and optionally verified)
-- amount must be >= min_price
-- OPEN mode: amount must be strictly greater than current_price
-"""
-
-AUCTION_SELECT_WINNER_DOC = """
-Select winner for CLOSED auction (manual).
-Only auction owner (developer) can select winner, and only after end_date.
+OPEN: last 50 bids are public.
+CLOSED: bids are visible only to owner/admin (via /sealed-bids/ endpoint).
 """
 
 AUCTION_CANCEL_DOC = """
-Soft-cancel an auction (status becomes CANCELLED) and remove its scheduled Celery Beat tasks.
+Cancel auction (soft-cancel).
 
-Cancellation rules:
-- After `start_date`: nobody can cancel (including admin).
-- Within 10 minutes before `start_date`: only admin can cancel.
-- Earlier than that: owner or admin can cancel.
-
-Notes:
-- This endpoint returns **204 No Content** on success.
+Rules:
+- After start_date: nobody can cancel (even admin).
+- Within AUCTION_CANCEL_LOCK_BEFORE_START: only admin can cancel.
+- Earlier: owner or admin can cancel.
 """
 
+JOIN_DOC = """
+Join an auction as a participant (stored in Redis).
+Required to place bids (both OPEN WS bids and CLOSED HTTP bids).
+"""
 
-# ----------------------------
-# Schemas
-# ----------------------------
+PARTICIPANTS_DOC = """
+Get auction participants list (Redis).
+OPEN: brokers can see.
+CLOSED: only owner/admin can see.
+"""
+
+CLOSED_BID_CREATE_DOC = """
+Place a sealed bid for CLOSED auction (HTTP).
+
+Rules:
+- auction must be ACTIVE and within time window
+- broker must be participant (joined)
+- one bid per broker (sealed)
+- amount >= min_price
+"""
+
+CLOSED_BID_UPDATE_DOC = """
+Update your sealed bid for CLOSED auction while ACTIVE.
+
+Rules:
+- auction must be ACTIVE and within time window
+- broker must be participant (joined)
+- updates own bid only
+- amount >= min_price
+"""
+
+SEALED_BIDS_LIST_DOC = """
+List sealed bids for CLOSED auction.
+
+Visible only to owner/admin.
+"""
+
+CLOSED_SHORTLIST_DOC = """
+Owner/admin sets shortlist of bid ids after auction is FINISHED (CLOSED).
+"""
+
+CLOSED_SELECT_WINNER_DOC = """
+Owner/admin selects winner bid from shortlist after auction is FINISHED (CLOSED).
+"""
+
 
 auction_list_schema = extend_schema(
     summary="List auctions",
@@ -114,44 +129,22 @@ auction_list_schema = extend_schema(
             required=False,
             description="draft|active|finished|cancelled",
         ),
-        OpenApiParameter(
-            "property_id",
-            OpenApiTypes.INT,
-            required=False,
-            description="Filter by property id",
-        ),
-        OpenApiParameter(
-            "propertyId",
-            OpenApiTypes.INT,
-            required=False,
-            description="Filter by property id (camelCase)",
-        ),
-        OpenApiParameter(
-            "owner_id",
-            OpenApiTypes.INT,
-            required=False,
-            description="Filter by auction owner id",
-        ),
-        OpenApiParameter(
-            "active",
-            OpenApiTypes.BOOL,
-            required=False,
-            description="If true: only active auctions now",
-        ),
+        OpenApiParameter("property_id", OpenApiTypes.INT, required=False),
+        OpenApiParameter("propertyId", OpenApiTypes.INT, required=False),
+        OpenApiParameter("owner_id", OpenApiTypes.INT, required=False),
+        OpenApiParameter("active", OpenApiTypes.BOOL, required=False),
         OpenApiParameter("starts_before", OpenApiTypes.DATETIME, required=False),
         OpenApiParameter("starts_after", OpenApiTypes.DATETIME, required=False),
         OpenApiParameter("ends_before", OpenApiTypes.DATETIME, required=False),
         OpenApiParameter("ends_after", OpenApiTypes.DATETIME, required=False),
-        OpenApiParameter(
-            "ordering", OpenApiTypes.STR, required=False, description="e.g. -created_at"
-        ),
+        OpenApiParameter("ordering", OpenApiTypes.STR, required=False),
         OpenApiParameter("page", OpenApiTypes.INT, required=False),
         OpenApiParameter("page_size", OpenApiTypes.INT, required=False),
     ],
     responses={
         200: OpenApiResponse(
             response=AuctionListSerializer, description="Paginated auctions list."
-        ),
+        )
     },
     tags=["Auctions"],
 )
@@ -183,122 +176,156 @@ auction_detail_schema = extend_schema(
     responses={
         200: OpenApiResponse(
             response=AuctionDetailSerializer, description="Auction detail."
-        ),
-        404: OpenApiResponse(description="Not found."),
+        )
     },
     tags=["Auctions"],
 )
 
 my_auctions_schema = extend_schema(
     summary="List my auctions",
-    description=MY_AUCTIONS_DOC,
-    parameters=[
-        OpenApiParameter(
-            "mode", OpenApiTypes.STR, required=False, description="open|closed"
-        ),
-        OpenApiParameter(
-            "status",
-            OpenApiTypes.STR,
-            required=False,
-            description="draft|active|finished|cancelled",
-        ),
-        OpenApiParameter("property_id", OpenApiTypes.INT, required=False),
-        OpenApiParameter("propertyId", OpenApiTypes.INT, required=False),
-        OpenApiParameter("active", OpenApiTypes.BOOL, required=False),
-        OpenApiParameter("starts_before", OpenApiTypes.DATETIME, required=False),
-        OpenApiParameter("starts_after", OpenApiTypes.DATETIME, required=False),
-        OpenApiParameter("ends_before", OpenApiTypes.DATETIME, required=False),
-        OpenApiParameter("ends_after", OpenApiTypes.DATETIME, required=False),
-        OpenApiParameter("ordering", OpenApiTypes.STR, required=False),
-        OpenApiParameter("page", OpenApiTypes.INT, required=False),
-        OpenApiParameter("page_size", OpenApiTypes.INT, required=False),
-    ],
-    responses={
-        200: OpenApiResponse(
-            response=AuctionListSerializer,
-            description="Paginated list of current developer auctions.",
-        ),
-        401: OpenApiResponse(
-            response=DRFDetailErrorSerializer, description="Unauthorized."
-        ),
-        403: OpenApiResponse(
-            response=DRFDetailErrorSerializer, description="Forbidden (developer only)."
-        ),
-    },
-    tags=["Auctions"],
-)
-
-# Response for POST /auctions/:id/bid is a dict: { auction: ..., bid: ... }
-auction_bid_response_schema = inline_serializer(
-    name="AuctionBidCreateResponse",
-    fields={
-        "auction": AuctionDetailSerializer(),
-        "bid": BidSerializer(),
-    },
-)
-
-auction_bid_schema = extend_schema(
-    summary="Place a bid",
-    description=AUCTION_BID_DOC,
-    request=BidCreateSerializer,
-    responses={
-        201: OpenApiResponse(
-            response=auction_bid_response_schema, description="Bid created."
-        ),
-        400: OpenApiResponse(
-            response=DRFDetailErrorSerializer, description="Validation error."
-        ),
-        401: OpenApiResponse(
-            response=DRFDetailErrorSerializer, description="Unauthorized."
-        ),
-        403: OpenApiResponse(
-            response=DRFDetailErrorSerializer, description="Forbidden (broker only)."
-        ),
-        404: OpenApiResponse(description="Not found."),
-    },
-    tags=["Auctions"],
-)
-
-auction_select_winner_schema = extend_schema(
-    summary="Select winner (closed auction)",
-    description=AUCTION_SELECT_WINNER_DOC,
-    request=SelectWinnerSerializer,
-    responses={
-        200: OpenApiResponse(
-            response=AuctionDetailSerializer, description="Winner selected."
-        ),
-        400: OpenApiResponse(
-            response=DRFDetailErrorSerializer, description="Validation error."
-        ),
-        401: OpenApiResponse(
-            response=DRFDetailErrorSerializer, description="Unauthorized."
-        ),
-        403: OpenApiResponse(
-            response=DRFDetailErrorSerializer, description="Forbidden (owner only)."
-        ),
-        404: OpenApiResponse(description="Not found."),
-    },
+    description="Developer-only list of own auctions. Supports same filters as public list.",
     tags=["Auctions"],
 )
 
 auction_cancel_schema = extend_schema(
-    summary="Cancel auction (soft delete)",
+    summary="Cancel auction",
     description=AUCTION_CANCEL_DOC,
     responses={
         204: OpenApiResponse(description="Auction cancelled."),
         400: OpenApiResponse(
-            response=DRFDetailErrorSerializer,
-            description="Validation error (e.g., auction already started).",
+            response=DRFDetailErrorSerializer, description="Validation error."
         ),
         401: OpenApiResponse(
-            response=DRFDetailErrorSerializer,
-            description="Unauthorized.",
+            response=DRFDetailErrorSerializer, description="Unauthorized."
         ),
         403: OpenApiResponse(
-            response=DRFDetailErrorSerializer,
-            description="Forbidden (not owner/admin, or within 10 minutes for non-admin).",
+            response=DRFDetailErrorSerializer, description="Forbidden."
         ),
         404: OpenApiResponse(description="Not found."),
     },
     tags=["Auctions"],
+)
+
+join_schema = extend_schema(
+    summary="Join auction",
+    description=JOIN_DOC,
+    responses={
+        200: OpenApiResponse(
+            response=inline_serializer(
+                name="JoinAuctionResponse",
+                fields={
+                    "auction_id": serializers.IntegerField(),
+                    "user_id": serializers.IntegerField(),
+                    "participants_count": serializers.IntegerField(),
+                },
+            )
+        ),
+        400: OpenApiResponse(
+            response=DRFDetailErrorSerializer, description="Validation error."
+        ),
+        401: OpenApiResponse(
+            response=DRFDetailErrorSerializer, description="Unauthorized."
+        ),
+        403: OpenApiResponse(
+            response=DRFDetailErrorSerializer, description="Forbidden."
+        ),
+    },
+    tags=["Participants"],
+)
+
+participants_list_schema = extend_schema(
+    summary="List participants",
+    description=PARTICIPANTS_DOC,
+    responses={
+        200: OpenApiResponse(
+            response=ParticipantsListSerializer, description="Participants list."
+        ),
+        401: OpenApiResponse(
+            response=DRFDetailErrorSerializer, description="Unauthorized."
+        ),
+        403: OpenApiResponse(
+            response=DRFDetailErrorSerializer, description="Forbidden."
+        ),
+        404: OpenApiResponse(description="Not found."),
+    },
+    tags=["Participants"],
+)
+
+closed_bid_create_schema = extend_schema(
+    summary="Place sealed bid (CLOSED)",
+    description=CLOSED_BID_CREATE_DOC,
+    request=BidCreateSerializer,
+    responses={
+        201: OpenApiResponse(response=BidSerializer, description="Bid created."),
+        400: OpenApiResponse(
+            response=DRFDetailErrorSerializer, description="Validation error."
+        ),
+        401: OpenApiResponse(
+            response=DRFDetailErrorSerializer, description="Unauthorized."
+        ),
+        403: OpenApiResponse(
+            response=DRFDetailErrorSerializer, description="Forbidden."
+        ),
+    },
+    tags=["Bids (Closed)"],
+)
+
+closed_bid_update_schema = extend_schema(
+    summary="Update my sealed bid (CLOSED)",
+    description=CLOSED_BID_UPDATE_DOC,
+    request=BidUpdateSerializer,
+    responses={
+        200: OpenApiResponse(response=BidSerializer, description="Bid updated."),
+        400: OpenApiResponse(
+            response=DRFDetailErrorSerializer, description="Validation error."
+        ),
+        401: OpenApiResponse(
+            response=DRFDetailErrorSerializer, description="Unauthorized."
+        ),
+        403: OpenApiResponse(
+            response=DRFDetailErrorSerializer, description="Forbidden."
+        ),
+    },
+    tags=["Bids (Closed)"],
+)
+
+sealed_bids_list_schema = extend_schema(
+    summary="List sealed bids (CLOSED) for owner/admin",
+    description=SEALED_BIDS_LIST_DOC,
+    responses={
+        200: OpenApiResponse(response=BidSerializer, description="List of bids."),
+        401: OpenApiResponse(
+            response=DRFDetailErrorSerializer, description="Unauthorized."
+        ),
+        403: OpenApiResponse(
+            response=DRFDetailErrorSerializer, description="Forbidden."
+        ),
+    },
+    tags=["Bids (Closed)"],
+)
+
+closed_shortlist_schema = extend_schema(
+    summary="Set shortlist (CLOSED)",
+    description=CLOSED_SHORTLIST_DOC,
+    request=ClosedShortlistSerializer,
+    responses={
+        200: OpenApiResponse(description="Shortlist set."),
+        400: OpenApiResponse(response=DRFDetailErrorSerializer),
+        401: OpenApiResponse(response=DRFDetailErrorSerializer),
+        403: OpenApiResponse(response=DRFDetailErrorSerializer),
+    },
+    tags=["Closed Flow"],
+)
+
+closed_select_winner_schema = extend_schema(
+    summary="Select winner from shortlist (CLOSED)",
+    description=CLOSED_SELECT_WINNER_DOC,
+    request=ClosedSelectWinnerSerializer,
+    responses={
+        200: OpenApiResponse(description="Winner selected."),
+        400: OpenApiResponse(response=DRFDetailErrorSerializer),
+        401: OpenApiResponse(response=DRFDetailErrorSerializer),
+        403: OpenApiResponse(response=DRFDetailErrorSerializer),
+    },
+    tags=["Closed Flow"],
 )

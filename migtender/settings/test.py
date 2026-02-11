@@ -12,6 +12,8 @@ DEBUG = False
 # Django test client uses "testserver" host by default
 ALLOWED_HOSTS = ["testserver", "localhost", "127.0.0.1"]
 
+INSTALLED_APPS = ["daphne", *INSTALLED_APPS]
+
 
 # -----------------------------
 # Database
