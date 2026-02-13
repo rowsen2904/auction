@@ -239,11 +239,6 @@ class DeveloperInfoSerializer(serializers.ModelSerializer):
         fields = ["company_name"]
 
 
-class BrokerVerificationSerializer(serializers.Serializer):
-    id = serializers.IntegerField()
-    action = serializers.ChoiceField(choices=("accept", "reject"))
-
-
 # --- Response serializers (nice Swagger) ---
 
 

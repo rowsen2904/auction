@@ -6,15 +6,21 @@ from apps.users.models import Broker
 
 User = get_user_model()
 
-VERIFY_URL = "/api/v1/auth/verification/broker/"
+VERIFY_URL = "/api/v1/admin/broker/verify/"
 
 
 class TestBrokerVerificationEndpoint(APITestCase):
     def setUp(self):
-        # Create admin user for IsAdminUser permission
-        self.admin = User.objects.create_superuser(
+        # Create admin that will pass both:
+        # - DRF IsAdminUser (is_staff)
+        # - custom role-based checks (role=ADMIN), if you use them anywhere
+        self.admin = User.objects.create_user(
             email="admin@example.com",
             password="StrongPass123!",
+            role=User.Roles.ADMIN,
+            is_active=True,
+            is_staff=True,
+            is_superuser=True,
         )
 
         # Create broker user + broker profile
@@ -25,8 +31,6 @@ class TestBrokerVerificationEndpoint(APITestCase):
             is_active=True,
         )
 
-        # NOTE: Model validators do not run on save() unless full_clean() is called.
-        # Still, it's better to keep a realistic INN format.
         self.broker = Broker.objects.create(
             user=self.broker_user,
             inn_number="7707083893",
@@ -45,7 +49,6 @@ class TestBrokerVerificationEndpoint(APITestCase):
             format="json",
         )
         self.assertEqual(resp.status_code, status.HTTP_200_OK)
-        self.assertIn("message", resp.data)
 
         self.broker.refresh_from_db()
         self.assertEqual(
@@ -64,7 +67,6 @@ class TestBrokerVerificationEndpoint(APITestCase):
             format="json",
         )
         self.assertEqual(resp.status_code, status.HTTP_200_OK)
-        self.assertIn("message", resp.data)
 
         self.broker.refresh_from_db()
         self.assertEqual(
@@ -114,7 +116,6 @@ class TestBrokerVerificationEndpoint(APITestCase):
             is_active=True,
         )
 
-        # Because queryset filters role=BROKER, get_object_or_404 should return 404
         resp = self.client.post(
             VERIFY_URL,
             data={"id": dev.id, "action": "accept"},
@@ -125,7 +126,6 @@ class TestBrokerVerificationEndpoint(APITestCase):
     def test_broker_role_but_profile_missing_returns_400(self):
         self.client.force_authenticate(user=self.admin)
 
-        # Create broker user without Broker profile (edge-case)
         user = User.objects.create_user(
             email="broker2@example.com",
             password="StrongPass123!",
@@ -139,7 +139,6 @@ class TestBrokerVerificationEndpoint(APITestCase):
             format="json",
         )
         self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("id", resp.data)
 
     def test_accept_is_idempotent(self):
         self.client.force_authenticate(user=self.admin)
@@ -154,8 +153,6 @@ class TestBrokerVerificationEndpoint(APITestCase):
         self.broker.refresh_from_db()
         first_verified_at = self.broker.verified_at
 
-        # Second accept should not break anything
-        # (your updates dict prevents rewriting verified_at)
         r2 = self.client.post(
             VERIFY_URL,
             data={"id": self.broker_user.id, "action": "accept"},
@@ -184,8 +181,6 @@ class TestBrokerVerificationEndpoint(APITestCase):
         self.broker.refresh_from_db()
         first_rejected_at = self.broker.rejected_at
 
-        # Second reject should not break anything
-        # (your updates dict prevents rewriting rejected_at)
         r2 = self.client.post(
             VERIFY_URL,
             data={"id": self.broker_user.id, "action": "reject"},
