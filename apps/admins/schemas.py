@@ -9,6 +9,8 @@ from drf_spectacular.utils import (
 )
 from rest_framework import serializers
 
+from .serializers import UserActiveUpdateSerializer
+
 broker_verify_schema = extend_schema(
     tags=["Admin"],
     summary="Verify or reject broker",
@@ -147,5 +149,29 @@ user_list_schema = extend_schema(
         ),
         401: OpenApiResponse(description="Unauthorized"),
         403: OpenApiResponse(description="Forbidden (admin only)"),
+    },
+)
+
+
+UserActiveUpdateResponseSerializer = inline_serializer(
+    name="UserActiveUpdateResponse",
+    fields={
+        "id": serializers.IntegerField(),
+        "is_active": serializers.BooleanField(),
+        "message": serializers.CharField(),
+    },
+)
+
+
+user_active_update_schema = extend_schema(
+    tags=["Admin"],
+    summary="Block / unblock user",
+    description="Admin-only. Updates user's is_active flag.",
+    request=UserActiveUpdateSerializer,
+    responses={
+        200: OpenApiResponse(response=UserActiveUpdateResponseSerializer),
+        401: OpenApiResponse(description="Unauthorized"),
+        403: OpenApiResponse(description="Forbidden (admin only)"),
+        404: OpenApiResponse(description="User not found"),
     },
 )

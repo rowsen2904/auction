@@ -26,3 +26,7 @@ class UserSerializer(serializers.ModelSerializer):
             "broker",
             "developer",
         ]
+
+
+class UserActiveUpdateSerializer(serializers.Serializer):
+    is_active = serializers.BooleanField()

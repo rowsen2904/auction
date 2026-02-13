@@ -10,8 +10,8 @@ from apps.users.serializers import TokenUserSerializer
 
 from .filters import UserFilter
 from .paginations import UserListPagination
-from .schemas import broker_verify_schema, user_list_schema
-from .serializers import BrokerVerificationSerializer
+from .schemas import broker_verify_schema, user_active_update_schema, user_list_schema
+from .serializers import BrokerVerificationSerializer, UserActiveUpdateSerializer
 
 User = get_user_model()
 
@@ -55,7 +55,12 @@ class UserListView(generics.ListAPIView):
 
     @user_list_schema
     def get(self, request, *args, **kwargs):
+        print(request.user)
         return super().get(request, *args, **kwargs)
+
+
+class BlockUserView(generics.GenericAPIView):
+    permission_classes = [IsAdminUser]
 
 
 class BrokerVerificationView(generics.GenericAPIView):
@@ -90,3 +95,33 @@ class BrokerVerificationView(generics.GenericAPIView):
             msg = _("Broker has been rejected.")
 
         return Response({"message": msg}, status=status.HTTP_200_OK)
+
+
+class UserActiveUpdateView(generics.GenericAPIView):
+    permission_classes = [IsAdminUser]
+    serializer_class = UserActiveUpdateSerializer
+
+    @user_active_update_schema
+    def patch(self, request, pk: int, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data, partial=False)
+        serializer.is_valid(raise_exception=True)
+        new_is_active: bool = serializer.validated_data["is_active"]
+
+        # Prevent admin from disabling themselves (optional, but usually needed)
+        if request.user.id == pk and new_is_active is False:
+            raise ValidationError({"detail": "You cannot deactivate your own account."})
+
+        user = get_object_or_404(User.objects.only("id", "is_active"), pk=pk)
+
+        if user.is_active != new_is_active:
+            user.is_active = new_is_active
+            user.save(update_fields=["is_active"])
+
+        return Response(
+            {
+                "id": user.id,
+                "is_active": user.is_active,
+                "message": "User updated.",
+            },
+            status=status.HTTP_200_OK,
+        )
