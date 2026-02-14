@@ -6,6 +6,7 @@ from unittest.mock import patch
 
 from auctions.models import Auction
 from django.utils import timezone
+from properties.models import Property
 from rest_framework import status
 from rest_framework.test import APITestCase
 
@@ -17,6 +18,9 @@ class TestAuctionsCRUD(APITestCase, AuctionTestMixin):
         self.create_users()
         self.prop1 = self.create_property(self.dev1, address="Dev1 Property A")
         self.prop2 = self.create_property(self.dev2, address="Dev2 Property B")
+
+        self.prop1.moderation_status = Property.ModerationStatuses.APPROVED
+        self.prop1.save(update_fields=["moderation_status"])
 
     def test_create_requires_auth(self):
         now = timezone.now()
@@ -161,3 +165,28 @@ class TestAuctionsCRUD(APITestCase, AuctionTestMixin):
         self.assertEqual(kwargs["auction_id"], auc.id)
         self.assertEqual(kwargs["start_date"], auc.start_date)
         self.assertEqual(kwargs["end_date"], auc.end_date)
+
+    @patch("auctions.serializers.schedule_auction_status_tasks")
+    def test_create_denies_unapproved_property(self, schedule_mock):
+        self.client.force_authenticate(user=self.dev1)
+        self.prop1.moderation_status = Property.ModerationStatuses.IN_REVIEW
+        self.prop1.save(update_fields=["moderation_status"])
+
+        now = timezone.now()
+        resp = self.client.post(
+            self.BASE,
+            data={
+                "property_id": self.prop1.id,
+                "mode": Auction.Mode.OPEN,
+                "min_price": "1000.00",
+                "start_date": (now + timedelta(hours=2)).isoformat(),
+                "end_date": (now + timedelta(days=1)).isoformat(),
+            },
+            format="json",
+        )
+
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("real_property", resp.data)
+        self.assertIn("approved", resp.data["real_property"][0].lower())
+
+        schedule_mock.assert_not_called()

@@ -70,6 +70,20 @@ class AuctionCreateSerializer(serializers.ModelSerializer):
         min_dur = getattr(settings, "AUCTION_MIN_DURATION", timedelta(hours=1))
         max_dur = getattr(settings, "AUCTION_MAX_DURATION", timedelta(days=30))
 
+        prop = attrs.get("real_property") or getattr(
+            self.instance, "real_property", None
+        )
+
+        if prop is None:
+            raise serializers.ValidationError(
+                {"real_property": "This field is required."}
+            )
+
+        if prop.moderation_status != Property.ModerationStatuses.APPROVED:
+            raise serializers.ValidationError(
+                {"real_property": "Property must be approved by admin."}
+            )
+
         if start and start < now + min_offset:
             raise serializers.ValidationError(
                 {"start_date": f"start_date must be at least {min_offset} from now."}
