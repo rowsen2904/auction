@@ -1,17 +1,30 @@
 from django.contrib.auth import get_user_model
 from django.shortcuts import get_object_or_404
 from django.utils.translation import gettext_lazy as _
+from properties.models import Property
 from rest_framework import generics, status
 from rest_framework.exceptions import ValidationError
 from rest_framework.permissions import IsAdminUser
 from rest_framework.response import Response
+from rest_framework.views import APIView
 
 from apps.users.serializers import TokenUserSerializer
 
 from .filters import UserFilter
 from .paginations import UserListPagination
-from .schemas import broker_verify_schema, user_active_update_schema, user_list_schema
-from .serializers import BrokerVerificationSerializer, UserActiveUpdateSerializer
+from .schemas import (
+    approve_property_schema,
+    broker_verify_schema,
+    pending_properties_list_schema,
+    reject_property_schema,
+    user_active_update_schema,
+    user_list_schema,
+)
+from .serializers import (
+    BrokerVerificationSerializer,
+    PendingPropertySerializer,
+    UserActiveUpdateSerializer,
+)
 
 User = get_user_model()
 
@@ -123,5 +136,69 @@ class UserActiveUpdateView(generics.GenericAPIView):
                 "is_active": user.is_active,
                 "message": "User updated.",
             },
+            status=status.HTTP_200_OK,
+        )
+
+
+class PendingPropertiesListView(generics.ListAPIView):
+    permission_classes = [IsAdminUser]
+    serializer_class = PendingPropertySerializer
+
+    def get_queryset(self):
+        return (
+            Property.objects.select_related("owner")
+            .filter(moderation_status=Property.ModerationStatuses.IN_REVIEW)
+            .order_by("-created_at")
+        )
+
+    @pending_properties_list_schema
+    def get(self, request, *args, **kwargs):
+        return super().get(request, *args, **kwargs)
+
+
+class ApprovePropertyView(APIView):
+    permission_classes = [IsAdminUser]
+
+    @approve_property_schema
+    def patch(self, request, pk: int):
+        prop = Property.objects.only("id", "moderation_status").filter(pk=pk).first()
+        if not prop:
+            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        if prop.moderation_status == Property.ModerationStatuses.PENDING:
+            prop.moderation_status = Property.ModerationStatuses.APPROVED
+            prop.save(update_fields=["moderation_status", "updated_at"])
+            return Response(
+                {"message": _("Property has been successfully approved.")},
+                status=status.HTTP_200_OK,
+            )
+
+        return Response(
+            {"message": _(f"Property has already {prop.moderation_status}.")},
+            status=status.HTTP_200_OK,
+        )
+
+
+class RejectPropertyView(APIView):
+    permission_classes = [IsAdminUser]
+
+    @reject_property_schema
+    def patch(self, request, pk: int):
+        prop: Property = (
+            Property.objects.only("id", "moderation_status").filter(pk=pk).first()
+        )
+        if not prop:
+            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        if prop.moderation_status == Property.ModerationStatuses.PENDING:
+            prop.moderation_status = Property.ModerationStatuses.REJECTED
+            prop.save(update_fields=["moderation_status", "updated_at"])
+            return Response(
+                {"message": _("Property has been successfully rejected.")},
+                status=status.HTTP_200_OK,
+            )
+
+        return Response(
+            {"message": _(f"Property has already {prop.moderation_status}.")},
             status=status.HTTP_200_OK,
         )

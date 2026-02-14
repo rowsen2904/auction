@@ -9,7 +9,7 @@ from drf_spectacular.utils import (
 )
 from rest_framework import serializers
 
-from .serializers import UserActiveUpdateSerializer
+from .serializers import PendingPropertySerializer, UserActiveUpdateSerializer
 
 broker_verify_schema = extend_schema(
     tags=["Admin"],
@@ -173,5 +173,87 @@ user_active_update_schema = extend_schema(
         401: OpenApiResponse(description="Unauthorized"),
         403: OpenApiResponse(description="Forbidden (admin only)"),
         404: OpenApiResponse(description="User not found"),
+    },
+)
+
+pending_properties_list_schema = extend_schema(
+    tags=["Admin"],
+    summary="List pending properties",
+    description=(
+        "Admin list of properties on moderation.\n\n"
+        "Returns only properties with moderation_status = pending.\n"
+        "Pagination: default DRF pagination."
+    ),
+    parameters=[
+        OpenApiParameter(
+            name="page", required=False, type=int, description="Page number"
+        ),
+        OpenApiParameter(
+            name="page_size",
+            required=False,
+            type=int,
+            description="Items per page (if enabled)",
+        ),
+    ],
+    responses={
+        200: inline_serializer(
+            name="PaginatedPendingPropertyListResponse",
+            fields={
+                "count": serializers.IntegerField(),
+                "next": serializers.URLField(allow_null=True),
+                "previous": serializers.URLField(allow_null=True),
+                "results": PendingPropertySerializer(many=True),
+            },
+        ),
+        401: OpenApiResponse(description="Unauthorized"),
+        403: OpenApiResponse(description="Forbidden (admin only)"),
+    },
+)
+
+
+approve_property_schema = extend_schema(
+    tags=["Admin"],
+    summary="Approve property",
+    description=(
+        "Admin-only. Approves property moderation.\n\n"
+        "Idempotent:\n"
+        "- If status is pending -> becomes approved\n"
+        "- Otherwise returns a message that it's already in current status"
+    ),
+    request=None,
+    responses={
+        200: inline_serializer(
+            name="ApprovePropertyResponse",
+            fields={
+                "message": serializers.CharField(),
+            },
+        ),
+        401: OpenApiResponse(description="Unauthorized"),
+        403: OpenApiResponse(description="Forbidden (admin only)"),
+        404: OpenApiResponse(description="Not Found (property not found)"),
+    },
+)
+
+
+reject_property_schema = extend_schema(
+    tags=["Admin"],
+    summary="Reject property",
+    description=(
+        "Admin-only. Rejects property moderation.\n\n"
+        "Idempotent:\n"
+        "- If status is pending -> becomes rejected\n"
+        "- Otherwise returns a message that it's already in current status"
+    ),
+    request=None,
+    responses={
+        200: inline_serializer(
+            name="RejectPropertyResponse",
+            fields={
+                "message": serializers.CharField(),
+            },
+        ),
+        401: OpenApiResponse(description="Unauthorized"),
+        403: OpenApiResponse(description="Forbidden (admin only)"),
+        404: OpenApiResponse(description="Not Found (property not found)"),
     },
 )
