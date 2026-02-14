@@ -75,6 +75,7 @@ class PropertyAdmin(admin.ModelAdmin):
         "price",
         "currency",
         "status",
+        "moderation_status",
         "owner",
         "created_at",
     )
@@ -82,6 +83,7 @@ class PropertyAdmin(admin.ModelAdmin):
         "type",
         "property_class",
         "status",
+        "moderation_status",
         "currency",
         ("created_at", admin.DateFieldListFilter),
         ("deadline", admin.DateFieldListFilter),
@@ -93,7 +95,18 @@ class PropertyAdmin(admin.ModelAdmin):
     readonly_fields = ("created_at", "updated_at")
 
     fieldsets = (
-        (None, {"fields": ("owner", "type", "property_class", "status")}),
+        (
+            None,
+            {
+                "fields": (
+                    "owner",
+                    "type",
+                    "property_class",
+                    "status",
+                    "moderation_status",
+                )
+            },
+        ),
         ("Details", {"fields": ("address", "area", "price", "currency", "deadline")}),
         ("Timestamps", {"fields": ("created_at", "updated_at")}),
     )
