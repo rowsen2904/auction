@@ -147,7 +147,7 @@ class PendingPropertiesListView(generics.ListAPIView):
     def get_queryset(self):
         return (
             Property.objects.select_related("owner")
-            .filter(moderation_status=Property.ModerationStatuses.IN_REVIEW)
+            .filter(moderation_status=Property.ModerationStatuses.PENDING)
             .order_by("-created_at")
         )
 
