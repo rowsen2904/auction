@@ -29,11 +29,23 @@ from .serializers import (
 
 
 class PropertyListCreateView(generics.ListCreateAPIView):
-    queryset = Property.objects.select_related("owner").prefetch_related("images")
     pagination_class = PropertyPagination
     filterset_class = PropertyFilter
     ordering_fields = ["price", "created_at", "deadline", "area"]
     ordering = ["-created_at"]
+
+    def get_queryset(self):
+        return (
+            Property.objects.select_related("owner")
+            .prefetch_related("images")
+            .filter(
+                moderation_status=Property.ModerationStatuses.APPROVED,
+                status__in=[
+                    Property.PropertyStatuses.PUBLISHED,
+                    Property.PropertyStatuses.SOLD,
+                ],
+            )
+        )
 
     def get_permissions(self):
         if self.request.method == "POST":

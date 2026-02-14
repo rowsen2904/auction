@@ -58,7 +58,8 @@ class PropertyAPITests(APITestCase):
         p_class="comfort",
         price=Decimal("12000000.00"),
         currency="RUB",
-        status_val="published",
+        status_val=Property.PropertyStatuses.PUBLISHED,
+        moderation_status_val=Property.ModerationStatuses.APPROVED,
     ) -> Property:
         return Property.objects.create(
             owner=owner,
@@ -69,6 +70,7 @@ class PropertyAPITests(APITestCase):
             price=price,
             currency=currency,
             status=status_val,
+            moderation_status=moderation_status_val,
         )
 
     def test_create_property_requires_auth(self):
@@ -173,6 +175,54 @@ class PropertyAPITests(APITestCase):
         self.assertEqual(resp.data["results"][0]["type"], "house")
         self.assertEqual(resp.data["results"][0]["address"], "House B")
 
+    def test_list_excludes_not_approved_even_if_published(self):
+        self._create_property(
+            self.dev1,
+            address="Approved Visible",
+            status_val=Property.PropertyStatuses.PUBLISHED,
+            moderation_status_val=Property.ModerationStatuses.APPROVED,
+        )
+        self._create_property(
+            self.dev1,
+            address="Pending Hidden",
+            status_val=Property.PropertyStatuses.PUBLISHED,
+            moderation_status_val=Property.ModerationStatuses.PENDING,
+        )
+        self._create_property(
+            self.dev1,
+            address="Rejected Hidden",
+            status_val=Property.PropertyStatuses.PUBLISHED,
+            moderation_status_val=Property.ModerationStatuses.REJECTED,
+        )
+
+        resp = self.client.get(BASE, format="json")
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.assertEqual(resp.data["count"], 1)
+        self.assertEqual(resp.data["results"][0]["address"], "Approved Visible")
+
+    def test_list_includes_sold_if_approved(self):
+        self._create_property(
+            self.dev1,
+            address="Sold Visible",
+            status_val=Property.PropertyStatuses.SOLD,
+            moderation_status_val=Property.ModerationStatuses.APPROVED,
+        )
+
+        resp = self.client.get(BASE, format="json")
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.assertEqual(resp.data["count"], 1)
+        self.assertEqual(resp.data["results"][0]["status"], "sold")
+
+    def test_ordering_by_price_desc(self):
+        self._create_property(self.dev1, address="Cheap", price=Decimal("100.00"))
+        self._create_property(self.dev1, address="Expensive", price=Decimal("999.00"))
+
+        resp = self.client.get(f"{BASE}?ordering=-price", format="json")
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.assertEqual(resp.data["count"], 2)
+        self.assertEqual(resp.data["results"][0]["address"], "Expensive")
+        self.assertEqual(resp.data["results"][1]["address"], "Cheap")
+
     def test_property_detail_includes_images(self):
         prop = self._create_property(self.dev1, address="Prop With Images")
 
@@ -276,7 +326,6 @@ class PropertyAPITests(APITestCase):
                     format="multipart",
                 )
 
-                # English: print errors if validation fails
                 if r1.status_code != status.HTTP_201_CREATED:
                     print(r1.data)
 

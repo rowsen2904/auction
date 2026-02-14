@@ -20,7 +20,6 @@ class PropertyFilter(filters.FilterSet):
         fields = [
             "type",
             "property_class",
-            "status",
             "currency",
             "deadline",
             "address",
