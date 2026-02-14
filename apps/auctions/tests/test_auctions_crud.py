@@ -169,7 +169,7 @@ class TestAuctionsCRUD(APITestCase, AuctionTestMixin):
     @patch("auctions.serializers.schedule_auction_status_tasks")
     def test_create_denies_unapproved_property(self, schedule_mock):
         self.client.force_authenticate(user=self.dev1)
-        self.prop1.moderation_status = Property.ModerationStatuses.IN_REVIEW
+        self.prop1.moderation_status = Property.ModerationStatuses.PENDING
         self.prop1.save(update_fields=["moderation_status"])
 
         now = timezone.now()

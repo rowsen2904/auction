@@ -41,7 +41,7 @@ class Property(models.Model):
         SOLD = "sold", _("Sold")
 
     class ModerationStatuses(models.TextChoices):
-        IN_REVIEW = "in_review", _("In review")
+        PENDING = "pending", _("Pending")
         APPROVED = "approved", _("Approved")
         REJECTED = "rejected", _("Rejected")
 
@@ -92,7 +92,7 @@ class Property(models.Model):
     moderation_status = models.CharField(
         max_length=16,
         choices=ModerationStatuses.choices,
-        default=ModerationStatuses.IN_REVIEW,
+        default=ModerationStatuses.PENDING,
         db_index=True,
     )
 
