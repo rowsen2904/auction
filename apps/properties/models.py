@@ -38,6 +38,12 @@ class Property(models.Model):
         DRAFT = "draft", _("Draft")
         PUBLISHED = "published", _("Published")
         ARCHIVED = "archived", _("Archived")
+        SOLD = "sold", _("Sold")
+
+    class ModerationStatuses(models.TextChoices):
+        IN_REVIEW = "in_review", _("In review")
+        APPROVED = "approved", _("Approved")
+        REJECTED = "rejected", _("Rejected")
 
     owner = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -81,6 +87,12 @@ class Property(models.Model):
         max_length=16,
         choices=PropertyStatuses.choices,
         default=PropertyStatuses.DRAFT,
+        db_index=True,
+    )
+    moderation_status = models.CharField(
+        max_length=16,
+        choices=ModerationStatuses.choices,
+        default=ModerationStatuses.IN_REVIEW,
         db_index=True,
     )
 

@@ -23,6 +23,7 @@ class PropertyImageSerializer(serializers.ModelSerializer):
 class PropertyListSerializer(serializers.ModelSerializer):
     developer = serializers.IntegerField(source="owner_id", read_only=True)
     images = PropertyImageSerializer(many=True, read_only=True)
+    moderation_status = serializers.CharField(read_only=True)
 
     class Meta:
         model = Property
@@ -40,6 +41,7 @@ class PropertyListSerializer(serializers.ModelSerializer):
             "images",
             "created_at",
             "updated_at",
+            "moderation_status",
         ]
 
 
