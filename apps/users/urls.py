@@ -4,6 +4,7 @@ from .views import (
     CustomTokenRefreshView,
     GetVerificationCodeView,
     LoginView,
+    MeView,
     RegisterBrokerView,
     RegisterDeveloperView,
     ResendCodeView,
@@ -25,4 +26,6 @@ urlpatterns = [
         name="register-developer",
     ),
     path("register/broker/", RegisterBrokerView.as_view(), name="register-broker"),
+    # Get user profile (me)
+    path("me/", MeView.as_view(), name="me"),
 ]

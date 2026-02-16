@@ -284,3 +284,24 @@ class RegisterResponseSerializer(TokenObtainPairSerializer):
             "access": str(refresh.access_token),
             "user": TokenUserSerializer(user).data,
         }
+
+
+class MeSerializer(serializers.ModelSerializer):
+    broker = BrokerInfoSerializer()
+    developer = DeveloperInfoSerializer()
+
+    class Meta:
+        model = User
+        fields = (
+            "id",
+            "email",
+            "first_name",
+            "last_name",
+            "is_active",
+            "date_joined",
+            "is_broker",
+            "is_developer",
+            "is_admin",
+            "broker",
+            "developer",
+        )

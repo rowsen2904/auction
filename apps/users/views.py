@@ -1,10 +1,12 @@
 from django.contrib.auth import get_user_model
 from django.db import IntegrityError, transaction
 from django.utils.translation import gettext_lazy as _
+from drf_spectacular.utils import extend_schema
 from rest_framework import generics, status
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
-from rest_framework.permissions import AllowAny
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.views import APIView
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
 from helpers.utils import get_client_ip
@@ -22,6 +24,7 @@ from .schemas import (
 from .serializers import (
     EmailSerializer,
     LoginSerializer,
+    MeSerializer,
     RegisterBrokerSerializer,
     RegisterDeveloperSerializer,
     RegisterResponseSerializer,
@@ -247,3 +250,23 @@ class RegisterBrokerView(generics.GenericAPIView):
                 {"error": f"{e}"},
                 status=status.HTTP_409_CONFLICT,
             )
+
+
+class MeView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        summary="Get current user",
+        tags=["Auth"],
+        responses={200: MeSerializer},
+    )
+    def get(self, request, *args, **kwargs):
+        user = request.user
+
+        # If user got token earlier but later was deactivated
+        if not getattr(user, "is_active", True):
+            return Response(
+                {"detail": "User is inactive"}, status=status.HTTP_403_FORBIDDEN
+            )
+
+        return Response(MeSerializer(user).data, status=status.HTTP_200_OK)
