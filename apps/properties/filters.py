@@ -1,9 +1,12 @@
 from django_filters import rest_framework as filters
+from rest_framework.exceptions import ValidationError
 
 from .models import Property
 
 
 class PropertyFilter(filters.FilterSet):
+    status = filters.CharFilter(method="filter_status")
+
     # Filter by "district" via address substring (since address is a single field)
     address = filters.CharFilter(field_name="address", lookup_expr="icontains")
 
@@ -27,4 +30,19 @@ class PropertyFilter(filters.FilterSet):
             "price_max",
             "area_min",
             "area_max",
+            "status",
         ]
+
+    def filter_status(self, qs, name, value):
+        allowed = {
+            Property.PropertyStatuses.PUBLISHED,
+            Property.PropertyStatuses.SOLD,
+        }
+
+        value = (value or "").strip()
+
+        if value not in allowed:
+            raise ValidationError(
+                {"status": f"Allowed values: {', '.join(sorted(allowed))}."}
+            )
+        return qs.filter(status=value)
