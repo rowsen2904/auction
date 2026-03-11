@@ -1,7 +1,10 @@
+from auctions.models import Auction
 from auctions.permissions import IsDeveloper
 from django.db import IntegrityError, transaction
 from django.shortcuts import get_object_or_404
+from django.utils.translation import gettext_lazy as _
 from rest_framework import generics, status
+from rest_framework.exceptions import ValidationError
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
@@ -14,6 +17,7 @@ from .schemas import (
     my_properties_list_schema,
     properties_create_schema,
     properties_list_schema,
+    property_delete_schema,
     property_detail_schema,
     property_images_create_schema,
     property_images_list_schema,
@@ -111,6 +115,55 @@ class PropertyDetailView(generics.RetrieveUpdateAPIView):
     @property_patch_schema
     def patch(self, request, *args, **kwargs):
         return super().patch(request, *args, **kwargs)
+
+
+class PropertyDeleteView(generics.DestroyAPIView):
+    permission_classes = [IsAuthenticated, IsDeveloper, IsPropertyOwner]
+    http_method_names = ["delete", "head", "options"]
+
+    def get_queryset(self):
+        return Property.objects.only(
+            "id",
+            "owner_id",
+            "status",
+            "moderation_status",
+            "updated_at",
+        )
+
+    def perform_destroy(self, instance: Property) -> None:
+        with transaction.atomic():
+            prop: Property = get_object_or_404(
+                Property.objects.select_for_update().only("id", "owner_id"),
+                pk=instance.pk,
+            )
+
+            if prop.status == Property.PropertyStatuses.SOLD:
+                raise ValidationError({"error": _("Sold property cannot be deleted.")})
+
+            has_running_auction = Auction.objects.filter(
+                real_property_id=prop.id,
+                status__in=[
+                    Auction.Status.DRAFT,
+                    Auction.Status.ACTIVE,
+                    Auction.Status.FINISHED,
+                ],
+            ).exists()
+
+            if has_running_auction:
+                raise ValidationError(
+                    {
+                        "error": _(
+                            "Property cannot be deleted while it is linked to an active auction."
+                        )
+                    }
+                )
+
+            prop.delete()
+
+    @property_delete_schema
+    def delete(self, request, *args, **kwargs):
+        super().delete(request, *args, **kwargs)
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 class PropertyImageListCreateView(generics.GenericAPIView):

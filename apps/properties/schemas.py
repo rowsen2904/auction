@@ -452,3 +452,23 @@ property_images_create_schema = extend_schema(
     },
     tags=["Properties"],
 )
+
+property_delete_schema = extend_schema(
+    summary="Delete property",
+    description=(
+        "Delete property.\n\n"
+        "Only the property owner (developer) can delete it.\n"
+        "Deletion is forbidden if the property has a running auction "
+        "(auction status is draft or active)."
+    ),
+    responses={
+        204: OpenApiResponse(description="Property deleted."),
+        400: OpenApiResponse(
+            description="Property cannot be deleted because it is linked to a running auction."
+        ),
+        401: OpenApiResponse(description="Unauthorized."),
+        403: OpenApiResponse(description="Forbidden (only owner)."),
+        404: OpenApiResponse(description="Not found."),
+    },
+    tags=["Properties"],
+)
