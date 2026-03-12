@@ -50,6 +50,7 @@ class PropertyCreateSerializer(serializers.ModelSerializer):
     class Meta:
         model = Property
         fields = [
+            "id",
             "type",
             "address",
             "area",
@@ -59,6 +60,7 @@ class PropertyCreateSerializer(serializers.ModelSerializer):
             "deadline",
             "status",
         ]
+        read_only_fields = ["id"]
 
 
 class PropertyUpdateSerializer(serializers.ModelSerializer):

@@ -315,6 +315,7 @@ properties_create_schema = extend_schema(
                 OpenApiExample(
                     "Created",
                     value={
+                        "id": 0,
                         "type": "apartment",
                         "address": "Moscow, Tverskaya 1",
                         "area": "52.50",
