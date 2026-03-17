@@ -16,6 +16,7 @@ CORS_ALLOWED_ORIGINS = [
     "https://www.migntender.app",
     "https://admin.migntender.app",
     "http://localhost:3000",
+    "http://localhost:3001",
 ]
 
 CSRF_TRUSTED_ORIGINS = [
