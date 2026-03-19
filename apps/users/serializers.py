@@ -22,6 +22,7 @@ class TokenUserSerializer(serializers.Serializer):
     first_name = serializers.CharField(read_only=True)
     last_name = serializers.CharField(read_only=True)
     role = serializers.CharField(allow_null=True, required=False, read_only=True)
+    is_active = serializers.BooleanField(read_only=True)
 
     broker = serializers.SerializerMethodField()
     developer = serializers.SerializerMethodField()
