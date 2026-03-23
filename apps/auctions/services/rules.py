@@ -39,24 +39,37 @@ def ensure_mode(ctx: Ctx, *, allowed: set[str], message: str) -> None:
 
 def ensure_active_window(ctx: Ctx) -> None:
     if ctx.auction.status != Auction.Status.ACTIVE:
-        raise ValidationError({"detail": "Auction is not active."})
+        raise ValidationError({"detail": "Аукцион неактиве."})
     if not (ctx.auction.start_date <= ctx.now < ctx.auction.end_date):
-        raise ValidationError({"detail": "Auction is not within active time window."})
+        raise ValidationError(
+            {"detail": "Аукцион не вписывается в активный временной интервал."}
+        )
 
 
 def ensure_not_owner(ctx: Ctx) -> None:
     if ctx.user.id == ctx.auction.owner_id:
-        raise ValidationError({"detail": "Owner cannot bid on their own auction."})
+        raise ValidationError(
+            {
+                "detail": (
+                    "Владелец не может участвовать в аукционе, "
+                    "на котором он сам принимает участие."
+                )
+            }
+        )
 
 
 def ensure_min_price(ctx: Ctx, *, amount: Decimal) -> None:
     if amount < ctx.auction.min_price:
-        raise ValidationError({"detail": "Bid amount is below min_price."})
+        raise ValidationError({"detail": "Сумма ставки ниже минимальной цены."})
 
 
 def ensure_joined(*, auction_id: int, user_id: int) -> None:
     if not is_participant(auction_id=auction_id, user_id=user_id):
-        raise ValidationError({"detail": "You must join the auction before bidding."})
+        raise ValidationError(
+            {
+                "detail": "Перед тем как делать ставки, необходимо зарегистрироваться на аукционе."
+            }
+        )
 
 
 def ensure_not_current_leader(*, auction: Auction, user_id: int) -> None:
@@ -68,7 +81,7 @@ def ensure_not_current_leader(*, auction: Auction, user_id: int) -> None:
         .first()
     )
     if leader_id == user_id:
-        raise ValidationError({"detail": "You are already the highest bidder."})
+        raise ValidationError({"detail": "Вы уже предложили самую высокую цену."})
 
 
 def ensure_can_cancel(*, auction: Auction, user) -> None:
@@ -76,14 +89,16 @@ def ensure_can_cancel(*, auction: Auction, user) -> None:
 
     if now >= auction.start_date:
         raise ValidationError(
-            {"detail": "Auction cannot be cancelled after it has started."}
+            {"detail": "Аукцион не может быть отменен после его начала."}
         )
 
     lock_window = getattr(
         settings, "AUCTION_CANCEL_LOCK_BEFORE_START", timedelta(minutes=10)
     )
     if (auction.start_date - now) <= lock_window and not is_admin(user):
-        raise PermissionDenied("Only admin can cancel an auction close to its start.")
+        raise PermissionDenied(
+            "Отменить аукцион, близкий к началу, может только администратор."
+        )
 
 
 def open_compute_amount(*, auction: Auction, requested: Decimal) -> Decimal:
@@ -98,5 +113,7 @@ def open_compute_amount(*, auction: Auction, requested: Decimal) -> Decimal:
     step = getattr(settings, "OPEN_BID_MIN_INCREMENT", Decimal("150000.00"))
     min_allowed = auction.current_price + step
     if requested < min_allowed:
-        raise ValidationError({"detail": f"Bid must be at least {min_allowed}."})
+        raise ValidationError(
+            {"detail": f"Предложение должно быть не менее {min_allowed}."}
+        )
     return requested
