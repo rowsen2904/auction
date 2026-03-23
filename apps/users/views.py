@@ -1,3 +1,4 @@
+from auctions.permissions import IsBroker
 from django.contrib.auth import get_user_model
 from django.db import IntegrityError, transaction
 from django.utils.translation import gettext_lazy as _
@@ -22,6 +23,8 @@ from .schemas import (
     verify_email_schema,
 )
 from .serializers import (
+    BrokerDocumentsUploadSerializer,
+    BrokerInfoSerializer,
     EmailSerializer,
     LoginSerializer,
     MeSerializer,
@@ -270,3 +273,30 @@ class MeView(APIView):
             )
 
         return Response(MeSerializer(user).data, status=status.HTTP_200_OK)
+
+
+class BrokerDocumentsUploadView(generics.GenericAPIView):
+    permission_classes = [IsBroker]
+    serializer_class = BrokerDocumentsUploadSerializer
+    parser_classes = [MultiPartParser, FormParser]
+
+    @extend_schema(
+        summary="Upload broker documents",
+        tags=["Auth"],
+        request=BrokerDocumentsUploadSerializer,
+        responses={200: BrokerInfoSerializer},
+    )
+    def post(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        broker = serializer.save()
+
+        return Response(
+            {
+                "message": _("Документы успешно загружены."),
+                "broker": BrokerInfoSerializer(
+                    broker, context={"request": request}
+                ).data,
+            },
+            status=status.HTTP_200_OK,
+        )

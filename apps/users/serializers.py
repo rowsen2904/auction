@@ -306,3 +306,57 @@ class MeSerializer(serializers.ModelSerializer):
             "broker",
             "developer",
         )
+
+
+class BrokerDocumentsUploadSerializer(FileSizeValidationMixin, serializers.Serializer):
+    inn = serializers.FileField(required=False)
+    passport = serializers.FileField(required=False)
+
+    def validate_inn(self, file):
+        return self._validate_file_size(file, "inn")
+
+    def validate_passport(self, file):
+        return self._validate_file_size(file, "passport")
+
+    def validate(self, attrs):
+        request = self.context["request"]
+        user = request.user
+
+        if not attrs.get("inn") and not attrs.get("passport"):
+            raise serializers.ValidationError(
+                {"error": _("Загрузите хотя бы один документ: ИНН или паспорт.")}
+            )
+
+        broker = user.broker
+        errors = {}
+
+        if attrs.get("inn") and broker.inn:
+            errors["inn"] = [_("Документ ИНН уже загружен.")]
+
+        if attrs.get("passport") and broker.passport:
+            errors["passport"] = [_("Паспорт уже загружен.")]
+
+        if errors:
+            raise serializers.ValidationError(errors)
+
+        return attrs
+
+    def save(self, **kwargs):
+        broker = self.context["request"].user.broker
+        updated_fields = []
+
+        inn = self.validated_data.get("inn")
+        passport = self.validated_data.get("passport")
+
+        if inn is not None:
+            broker.inn = inn
+            updated_fields.append("inn")
+
+        if passport is not None:
+            broker.passport = passport
+            updated_fields.append("passport")
+
+        if updated_fields:
+            broker.save(update_fields=updated_fields)
+
+        return broker
