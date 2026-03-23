@@ -129,8 +129,10 @@ class Broker(models.Model):
     verified_at = models.DateTimeField(null=True, blank=True)
     rejected_at = models.DateTimeField(null=True, blank=True)
     inn = models.FileField(upload_to=broker_inn_folder, null=True, blank=True)
+    inn_name = models.CharField(max_length=255, blank=True, default="")
     inn_number = models.CharField(max_length=12, validators=[validate_inn], unique=True)
     passport = models.FileField(upload_to=broker_passport_folder, null=True, blank=True)
+    passport_name = models.CharField(max_length=255, blank=True, default="")
     verification_status = models.CharField(
         _("verification status"),
         max_length=20,

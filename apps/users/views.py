@@ -23,6 +23,7 @@ from .schemas import (
     verify_email_schema,
 )
 from .serializers import (
+    BrokerDocumentNamesUpdateSerializer,
     BrokerDocumentsUploadSerializer,
     BrokerInfoSerializer,
     EmailSerializer,
@@ -294,6 +295,32 @@ class BrokerDocumentsUploadView(generics.GenericAPIView):
         return Response(
             {
                 "message": _("Документы успешно загружены."),
+                "broker": BrokerInfoSerializer(
+                    broker, context={"request": request}
+                ).data,
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
+class BrokerDocumentNamesUpdateView(generics.GenericAPIView):
+    permission_classes = [IsBroker]
+    serializer_class = BrokerDocumentNamesUpdateSerializer
+
+    @extend_schema(
+        summary="Update broker document names",
+        tags=["Auth"],
+        request=BrokerDocumentNamesUpdateSerializer,
+        responses={200: BrokerInfoSerializer},
+    )
+    def patch(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        broker = serializer.save()
+
+        return Response(
+            {
+                "message": _("Названия документов успешно обновлены."),
                 "broker": BrokerInfoSerializer(
                     broker, context={"request": request}
                 ).data,

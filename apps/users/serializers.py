@@ -1,3 +1,5 @@
+import os
+
 from django.contrib.auth import authenticate, get_user_model
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError as DjangoValidationError
@@ -206,7 +208,9 @@ class BrokerInfoSerializer(serializers.ModelSerializer):
             "rejected_at",
             "verified_at",
             "inn_number",
+            "inn_name",
             "inn_url",
+            "passport_name",
             "passport_url",
         ]
 
@@ -310,7 +314,11 @@ class MeSerializer(serializers.ModelSerializer):
 
 class BrokerDocumentsUploadSerializer(FileSizeValidationMixin, serializers.Serializer):
     inn = serializers.FileField(required=False)
+    inn_name = serializers.CharField(required=False, allow_blank=False, max_length=255)
     passport = serializers.FileField(required=False)
+    passport_name = serializers.CharField(
+        required=False, allow_blank=False, max_length=255
+    )
 
     def validate_inn(self, file):
         return self._validate_file_size(file, "inn")
@@ -346,15 +354,77 @@ class BrokerDocumentsUploadSerializer(FileSizeValidationMixin, serializers.Seria
         updated_fields = []
 
         inn = self.validated_data.get("inn")
+        inn_name = self.validated_data.get("inn_name")
+
         passport = self.validated_data.get("passport")
+        passport_name = self.validated_data.get("passport_name")
 
         if inn is not None:
             broker.inn = inn
-            updated_fields.append("inn")
+            broker.inn_name = inn_name or os.path.splitext(inn.name)[0]
+            updated_fields.extend(["inn", "inn_name"])
 
         if passport is not None:
             broker.passport = passport
-            updated_fields.append("passport")
+            broker.passport_name = passport_name or os.path.splitext(passport.name)[0]
+            updated_fields.extend(["passport", "passport_name"])
+
+        broker.save(update_fields=updated_fields)
+        return broker
+
+
+class BrokerDocumentNamesUpdateSerializer(serializers.Serializer):
+    inn_name = serializers.CharField(required=False, allow_blank=False, max_length=255)
+    passport_name = serializers.CharField(
+        required=False,
+        allow_blank=False,
+        max_length=255,
+    )
+
+    NAME_TO_FILE_FIELD = {
+        "inn_name": "inn",
+        "passport_name": "passport",
+    }
+
+    def get_broker(self):
+        user = self.context["request"].user
+        broker = getattr(user, "broker", None)
+        return broker
+
+    def validate(self, attrs):
+        if not any(attrs.get(field) for field in self.NAME_TO_FILE_FIELD):
+            raise serializers.ValidationError(
+                {
+                    "error": _(
+                        "Укажите хотя бы одно поле: "
+                        "название ИНН или название паспорта."
+                    )
+                }
+            )
+
+        broker = self.get_broker()
+        errors = {}
+
+        for name_field, file_field in self.NAME_TO_FILE_FIELD.items():
+            if attrs.get(name_field) and not getattr(broker, file_field):
+                errors[name_field] = [
+                    _(f"{file_field.upper()} document is not uploaded yet.")
+                ]
+
+        if errors:
+            raise serializers.ValidationError(errors)
+
+        return attrs
+
+    def save(self, **kwargs):
+        broker = self.get_broker()
+        updated_fields = []
+
+        for name_field in self.NAME_TO_FILE_FIELD:
+            value = self.validated_data.get(name_field)
+            if value:
+                setattr(broker, name_field, value)
+                updated_fields.append(name_field)
 
         if updated_fields:
             broker.save(update_fields=updated_fields)
