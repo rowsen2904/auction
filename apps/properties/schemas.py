@@ -80,6 +80,11 @@ PROPERTY_IMAGES_CREATE_DOC = _(
     "- `external_url`\n"
 )
 
+PROPERTY_IMAGE_DELETE_DOC = _(
+    "Deletes a property image.\n\n"
+    "**Only the owner (developer who created the property) can delete the image.**"
+)
+
 PROPERTY_IMAGE_PATCH_DOC = _(
     "Partially updates a property image.\n\n"
     "**Only the owner (developer who created the property) can update the image.**\n\n"
@@ -482,6 +487,27 @@ property_delete_schema = extend_schema(
         401: OpenApiResponse(description="Unauthorized."),
         403: OpenApiResponse(description="Forbidden (only owner)."),
         404: OpenApiResponse(description="Not found."),
+    },
+    tags=["Properties"],
+)
+
+property_image_delete_schema = extend_schema(
+    summary="Delete property image",
+    description=PROPERTY_IMAGE_DELETE_DOC,
+    responses={
+        204: OpenApiResponse(description="Property image deleted."),
+        401: OpenApiResponse(
+            response=DRFDetailErrorSerializer,
+            description="Unauthorized.",
+        ),
+        403: OpenApiResponse(
+            response=DRFDetailErrorSerializer,
+            description="Forbidden (only developer can delete images).",
+        ),
+        404: OpenApiResponse(
+            response=DRFDetailErrorSerializer,
+            description="Not found (property not found, image not found, or not owner).",
+        ),
     },
     tags=["Properties"],
 )

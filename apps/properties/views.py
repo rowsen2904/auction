@@ -19,6 +19,7 @@ from .schemas import (
     properties_list_schema,
     property_delete_schema,
     property_detail_schema,
+    property_image_delete_schema,
     property_image_patch_schema,
     property_images_create_schema,
     property_images_list_schema,
@@ -239,6 +240,7 @@ class PropertyImageUpdateView(generics.GenericAPIView):
     permission_classes = [IsAuthenticated, IsDeveloper]
     serializer_class = PropertyImageUpdateSerializer
     parser_classes = [JSONParser]
+    http_method_names = ["patch", "delete", "head", "options"]
 
     def get_property(self) -> Property:
         return get_object_or_404(
@@ -301,3 +303,10 @@ class PropertyImageUpdateView(generics.GenericAPIView):
         locked_image.refresh_from_db()
         out = PropertyImageSerializer(locked_image, context={"request": request})
         return Response(out.data, status=status.HTTP_200_OK)
+
+    @property_image_delete_schema
+    def delete(self, request, *args, **kwargs):
+        prop = self.get_property()
+        image = self.get_image(prop)
+        image.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)

@@ -303,3 +303,63 @@ class PropertyImageAPITests(BasePropertyTestCase):
             format="json",
         )
         self.assertEqual(resp.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_delete_image_requires_auth(self):
+        prop = self._create_property(self.dev1, address="Delete Image Auth")
+        img = PropertyImage.objects.create(
+            property=prop,
+            external_url="https://cdn.example.com/delete-auth.jpg",
+            sort_order=0,
+            is_primary=True,
+        )
+
+        resp = self.client.delete(f"{BASE}{prop.id}/images/{img.id}/")
+        self.assertEqual(resp.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_delete_image_only_owner_returns_404(self):
+        prop = self._create_property(self.dev1, address="Delete Image Owner Only")
+        img = PropertyImage.objects.create(
+            property=prop,
+            external_url="https://cdn.example.com/delete-owner.jpg",
+            sort_order=0,
+            is_primary=True,
+        )
+
+        self.client.force_authenticate(user=self.dev2)
+        resp = self.client.delete(f"{BASE}{prop.id}/images/{img.id}/")
+        self.assertEqual(resp.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_delete_image_requires_developer(self):
+        prop = self._create_property(self.dev1, address="Delete Image Developer Only")
+        img = PropertyImage.objects.create(
+            property=prop,
+            external_url="https://cdn.example.com/delete-broker.jpg",
+            sort_order=0,
+            is_primary=True,
+        )
+
+        self.client.force_authenticate(user=self.broker)
+        resp = self.client.delete(f"{BASE}{prop.id}/images/{img.id}/")
+        self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_delete_image_success(self):
+        prop = self._create_property(self.dev1, address="Delete Image Success")
+        img = PropertyImage.objects.create(
+            property=prop,
+            external_url="https://cdn.example.com/delete-success.jpg",
+            sort_order=0,
+            is_primary=True,
+        )
+
+        self.client.force_authenticate(user=self.dev1)
+        resp = self.client.delete(f"{BASE}{prop.id}/images/{img.id}/")
+
+        self.assertEqual(resp.status_code, status.HTTP_204_NO_CONTENT)
+        self.assertFalse(PropertyImage.objects.filter(id=img.id).exists())
+
+    def test_delete_image_not_found(self):
+        prop = self._create_property(self.dev1, address="Delete Image Not Found")
+
+        self.client.force_authenticate(user=self.dev1)
+        resp = self.client.delete(f"{BASE}{prop.id}/images/999999/")
+        self.assertEqual(resp.status_code, status.HTTP_404_NOT_FOUND)
