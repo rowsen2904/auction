@@ -116,6 +116,48 @@ class AuctionListCreateView(generics.ListCreateAPIView):
         return Response(out, status=status.HTTP_201_CREATED)
 
 
+class ActiveAuctionListCreateView(generics.ListAPIView):
+    pagination_class = AuctionPagination
+    filterset_class = AuctionFilter
+
+    ordering = ["-created_at"]
+    ordering_fields = [
+        "created_at",
+        "start_date",
+        "end_date",
+        "current_price",
+        "bids_count",
+    ]
+
+    def get_permissions(self):
+        return [AllowAny()]
+
+    def get_queryset(self):
+        return Auction.objects.filter().only(
+            "id",
+            "real_property_id",
+            "owner_id",
+            "mode",
+            "min_price",
+            "start_date",
+            "end_date",
+            "status",
+            "bids_count",
+            "current_price",
+            "highest_bid_id",
+            "winner_bid_id",
+            "created_at",
+            "updated_at",
+        )
+
+    def get_serializer_class(self):
+        return AuctionListSerializer
+
+    @auction_list_schema
+    def get(self, request, *args, **kwargs):
+        return super().get(request, *args, **kwargs)
+
+
 class AuctionDetailView(generics.RetrieveAPIView):
     serializer_class = AuctionDetailSerializer
     permission_classes = [AllowAny]

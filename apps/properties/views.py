@@ -145,7 +145,7 @@ class PropertyDeleteView(generics.DestroyAPIView):
             has_running_auction = Auction.objects.filter(
                 real_property_id=prop.id,
                 status__in=[
-                    Auction.Status.DRAFT,
+                    Auction.Status.SCHEDULED,
                     Auction.Status.ACTIVE,
                     Auction.Status.FINISHED,
                 ],

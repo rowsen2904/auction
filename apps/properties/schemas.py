@@ -460,7 +460,7 @@ property_delete_schema = extend_schema(
         "Delete property.\n\n"
         "Only the property owner (developer) can delete it.\n"
         "Deletion is forbidden if the property has a running auction "
-        "(auction status is draft or active)."
+        "(auction status is scheduled or active)."
     ),
     responses={
         204: OpenApiResponse(description="Property deleted."),

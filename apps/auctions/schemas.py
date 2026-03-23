@@ -32,7 +32,7 @@ List auctions.
 
 Filters:
 - mode: open | closed
-- status: draft | active | finished | cancelled
+- status: scheduled | active | finished | cancelled
 - property_id / propertyId
 - owner_id
 - active=true (status=active and start<=now<end)
@@ -51,7 +51,7 @@ Create an auction.
 
 Only authenticated developers can create auctions.
 property_id must belong to current developer.
-Auction is created as DRAFT; Celery beat will activate at start_date.
+Auction is created as SCHEDULED; Celery beat will activate at start_date.
 """
 
 AUCTION_DETAIL_DOC = """
@@ -127,7 +127,7 @@ auction_list_schema = extend_schema(
             "status",
             OpenApiTypes.STR,
             required=False,
-            description="draft|active|finished|cancelled",
+            description="scheduled|active|finished|cancelled",
         ),
         OpenApiParameter("property_id", OpenApiTypes.INT, required=False),
         OpenApiParameter("propertyId", OpenApiTypes.INT, required=False),

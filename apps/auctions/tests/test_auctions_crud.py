@@ -136,7 +136,7 @@ class TestAuctionsCRUD(APITestCase, AuctionTestMixin):
         self.assertEqual(len(resp.data["bids"]), 1)
 
     @patch("auctions.serializers.schedule_auction_status_tasks")
-    def test_create_success_creates_draft_and_schedules(self, schedule_mock):
+    def test_create_success_creates_scheduled_and_schedules(self, schedule_mock):
         self.client.force_authenticate(user=self.dev1)
         now = timezone.now()
         start = now + timedelta(hours=2)
@@ -157,7 +157,7 @@ class TestAuctionsCRUD(APITestCase, AuctionTestMixin):
 
         self.assertEqual(resp.status_code, status.HTTP_201_CREATED)
         auc = Auction.objects.get(id=resp.data["id"])
-        self.assertEqual(auc.status, Auction.Status.DRAFT)
+        self.assertEqual(auc.status, Auction.Status.SCHEDULED)
         self.assertEqual(resp.data["property_id"], self.prop1.id)
 
         schedule_mock.assert_called_once()

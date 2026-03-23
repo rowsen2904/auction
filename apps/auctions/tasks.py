@@ -56,7 +56,7 @@ def schedule_auction_status_tasks(*, auction_id: int, start_date, end_date) -> N
 def activate_auction(self, auction_id: int) -> None:
     with transaction.atomic():
         auction = Auction.objects.select_for_update().filter(id=auction_id).first()
-        if not auction or auction.status != Auction.Status.DRAFT:
+        if not auction or auction.status != Auction.Status.SCHEDULED:
             return
 
         now = timezone.now()

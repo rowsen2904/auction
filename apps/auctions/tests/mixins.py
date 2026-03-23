@@ -85,7 +85,7 @@ class AuctionTestMixin:
         owner: User,
         prop: Property,
         mode: str = Auction.Mode.OPEN,
-        status_val: str = Auction.Status.DRAFT,
+        status_val: str = Auction.Status.SCHEDULED,
         start: timezone.datetime | None = None,
         end: timezone.datetime | None = None,
         min_price: Decimal = Decimal("1000.00"),

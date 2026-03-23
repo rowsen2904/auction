@@ -16,7 +16,7 @@ class Auction(models.Model):
         CLOSED = "closed", "Closed"
 
     class Status(models.TextChoices):
-        DRAFT = "draft", "Draft"
+        SCHEDULED = "scheduled", "Scheduled"
         ACTIVE = "active", "Active"
         FINISHED = "finished", "Finished"
         CANCELLED = "cancelled", "Cancelled"
@@ -51,7 +51,7 @@ class Auction(models.Model):
     status = models.CharField(
         max_length=12,
         choices=Status.choices,
-        default=Status.DRAFT,
+        default=Status.SCHEDULED,
         db_index=True,
     )
 

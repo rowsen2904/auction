@@ -39,7 +39,7 @@ class TestAuctionsCancel(APITestCase, AuctionTestMixin):
             prop=self.prop1,
             start=now + timedelta(hours=5),
             end=now + timedelta(days=1),
-            status_val=Auction.Status.DRAFT,
+            status_val=Auction.Status.SCHEDULED,
         )
 
         self.client.force_authenticate(user=self.dev1)

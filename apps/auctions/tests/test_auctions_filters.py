@@ -24,7 +24,7 @@ class TestAuctionsFilters(APITestCase, AuctionTestMixin):
                 owner=self.dev1,
                 prop=self.prop1,
                 mode=Auction.Mode.OPEN,
-                status_val=Auction.Status.DRAFT,
+                status_val=Auction.Status.SCHEDULED,
                 start=now + timedelta(hours=2),
                 end=now + timedelta(days=1),
             )
@@ -93,7 +93,7 @@ class TestAuctionsFilters(APITestCase, AuctionTestMixin):
         self.create_auction(
             owner=self.dev1,
             prop=self.prop1,
-            status_val=Auction.Status.DRAFT,
+            status_val=Auction.Status.SCHEDULED,
             start=now - timedelta(minutes=10),
             end=now + timedelta(minutes=10),
         )

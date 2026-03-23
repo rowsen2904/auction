@@ -24,7 +24,7 @@ class TestAuctionTasks(TestCase, AuctionTestMixin):
             owner=self.dev1,
             prop=self.prop1,
             mode=Auction.Mode.OPEN,
-            status_val=Auction.Status.DRAFT,
+            status_val=Auction.Status.SCHEDULED,
             start=now - timedelta(minutes=1),
             end=now + timedelta(hours=1),
         )

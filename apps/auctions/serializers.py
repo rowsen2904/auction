@@ -124,7 +124,7 @@ class AuctionCreateSerializer(serializers.ModelSerializer):
         request = self.context["request"]
         auction = Auction.objects.create(
             owner=request.user,
-            status=Auction.Status.DRAFT,
+            status=Auction.Status.SCHEDULED,
             **validated_data,
         )
 
