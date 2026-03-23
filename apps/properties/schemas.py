@@ -14,6 +14,7 @@ from .serializers import (
     PropertyCreateSerializer,
     PropertyImageCreateSerializer,
     PropertyImageSerializer,
+    PropertyImageUpdateSerializer,
     PropertyListSerializer,
     PropertyUpdateSerializer,
 )
@@ -77,6 +78,17 @@ PROPERTY_IMAGES_CREATE_DOC = _(
     "You can provide either:\n"
     "- `image` file upload, OR\n"
     "- `external_url`\n"
+)
+
+PROPERTY_IMAGE_PATCH_DOC = _(
+    "Partially updates a property image.\n\n"
+    "**Only the owner (developer who created the property) can update the image.**\n\n"
+    "Supported fields:\n"
+    "- `is_primary`\n"
+    "- `sort_order`\n\n"
+    "If `is_primary=true`, all other property images will be marked as `is_primary=false`.\n"
+    "If `sort_order` conflicts with another image of the same property, "
+    "the endpoint returns a validation error."
 )
 
 # -----------------------------
@@ -470,6 +482,91 @@ property_delete_schema = extend_schema(
         401: OpenApiResponse(description="Unauthorized."),
         403: OpenApiResponse(description="Forbidden (only owner)."),
         404: OpenApiResponse(description="Not found."),
+    },
+    tags=["Properties"],
+)
+
+property_image_patch_schema = extend_schema(
+    summary="Update property image",
+    description=PROPERTY_IMAGE_PATCH_DOC,
+    request=PropertyImageUpdateSerializer,
+    responses={
+        200: OpenApiResponse(
+            response=PropertyImageSerializer,
+            description="Property image updated.",
+            examples=[
+                OpenApiExample(
+                    "Update is_primary",
+                    value={
+                        "id": 100,
+                        "url": "http://host/media/developers/10/properties/1/abc.jpg",
+                        "external_url": None,
+                        "sort_order": 0,
+                        "is_primary": True,
+                        "created_at": "2026-02-04T06:10:00Z",
+                    },
+                ),
+                OpenApiExample(
+                    "Update sort_order",
+                    value={
+                        "id": 100,
+                        "url": "http://host/media/developers/10/properties/1/abc.jpg",
+                        "external_url": None,
+                        "sort_order": 5,
+                        "is_primary": False,
+                        "created_at": "2026-02-04T06:10:00Z",
+                    },
+                ),
+            ],
+        ),
+        400: OpenApiResponse(
+            response=ErrorResponseSerializer,
+            description="Validation / constraint error.",
+            examples=[
+                OpenApiExample(
+                    "Empty payload",
+                    value={"error": "Хотя бы одно поле должно быть передано."},
+                ),
+                OpenApiExample(
+                    "Duplicate sort_order",
+                    value={
+                        "error": "Ошибка ограничения. Проверьте уникальность sort_order."
+                    },
+                ),
+            ],
+        ),
+        401: OpenApiResponse(
+            response=DRFDetailErrorSerializer,
+            description="Unauthorized.",
+            examples=[
+                OpenApiExample(
+                    "Unauthorized",
+                    value={"detail": "Authentication credentials were not provided."},
+                )
+            ],
+        ),
+        403: OpenApiResponse(
+            response=DRFDetailErrorSerializer,
+            description="Forbidden (only developer can update images).",
+            examples=[
+                OpenApiExample(
+                    "Forbidden",
+                    value={
+                        "detail": "You do not have permission to perform this action."
+                    },
+                )
+            ],
+        ),
+        404: OpenApiResponse(
+            response=DRFDetailErrorSerializer,
+            description="Not found (property not found, image not found, or not owner).",
+            examples=[
+                OpenApiExample(
+                    "Not found",
+                    value={"detail": "Not found."},
+                )
+            ],
+        ),
     },
     tags=["Properties"],
 )

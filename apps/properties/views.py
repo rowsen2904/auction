@@ -19,6 +19,7 @@ from .schemas import (
     properties_list_schema,
     property_delete_schema,
     property_detail_schema,
+    property_image_patch_schema,
     property_images_create_schema,
     property_images_list_schema,
     property_patch_schema,
@@ -253,6 +254,7 @@ class PropertyImageUpdateView(generics.GenericAPIView):
             property=prop,
         )
 
+    @property_image_patch_schema
     def patch(self, request, *args, **kwargs):
         prop = self.get_property()
         image = self.get_image(prop)
