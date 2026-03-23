@@ -187,6 +187,6 @@ class TestAuctionsCRUD(APITestCase, AuctionTestMixin):
 
         self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn("real_property", resp.data)
-        self.assertIn("approved", resp.data["real_property"][0].lower())
+        self.assertIn("одобрен", resp.data["real_property"][0].lower())
 
         schedule_mock.assert_not_called()

@@ -76,33 +76,38 @@ class AuctionCreateSerializer(serializers.ModelSerializer):
 
         if prop is None:
             raise serializers.ValidationError(
-                {"real_property": "This field is required."}
+                {"real_property": "Это поле обязательно для заполнения."}
             )
 
         if prop.moderation_status != Property.ModerationStatuses.APPROVED:
             raise serializers.ValidationError(
-                {"real_property": "Property must be approved by admin."}
+                {
+                    "real_property": "Объект недвижимости должен быть одобрен администрацией."
+                }
             )
 
         if start and start < now + min_offset:
             raise serializers.ValidationError(
-                {"start_date": f"start_date must be at least {min_offset} from now."}
+                {
+                    "start_date": f"Дата начала должна быть не менее чем на {min_offset} "
+                    "от текущего момента."
+                }
             )
 
         if start and end and end <= start:
             raise serializers.ValidationError(
-                {"end_date": "end_date must be greater than start_date."}
+                {"end_date": "Дата окончания должна быть больше даты начала."}
             )
 
         if start and end:
             dur = end - start
             if dur < min_dur:
                 raise serializers.ValidationError(
-                    {"end_date": f"duration must be at least {min_dur}."}
+                    {"end_date": f"Продолжительность должна быть не менее {min_dur}."}
                 )
             if dur > max_dur:
                 raise serializers.ValidationError(
-                    {"end_date": f"duration must be at most {max_dur}."}
+                    {"end_date": f"Продолжительность должна быть не более {max_dur}."}
                 )
 
         return attrs
@@ -111,7 +116,7 @@ class AuctionCreateSerializer(serializers.ModelSerializer):
         request = self.context["request"]
         if prop.owner_id != request.user.id:
             raise serializers.ValidationError(
-                "You can only create auctions for your own properties."
+                "Вы можете создавать аукционы только для своей собственной недвижимости."
             )
         return prop
 

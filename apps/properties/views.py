@@ -138,7 +138,9 @@ class PropertyDeleteView(generics.DestroyAPIView):
             )
 
             if prop.status == Property.PropertyStatuses.SOLD:
-                raise ValidationError({"error": _("Sold property cannot be deleted.")})
+                raise ValidationError(
+                    {"error": _("Проданное имущество удалить нельзя.")}
+                )
 
             has_running_auction = Auction.objects.filter(
                 real_property_id=prop.id,
@@ -153,7 +155,8 @@ class PropertyDeleteView(generics.DestroyAPIView):
                 raise ValidationError(
                     {
                         "error": _(
-                            "Property cannot be deleted while it is linked to an active auction."
+                            "Объект недвижимости нельзя удалить, "
+                            "пока он связан с активным аукционом."
                         )
                     }
                 )
@@ -222,7 +225,7 @@ class PropertyImageListCreateView(generics.GenericAPIView):
         except IntegrityError:
             # Unique sort_order / one primary per property constraints
             return Response(
-                {"error": "Constraint error. Check sort_order / is_primary."},
+                {"error": "Ошибка ограничения. Проверьте sort_order / is_primary."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
