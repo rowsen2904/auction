@@ -5,6 +5,7 @@ from .views import (
     PropertyDeleteView,
     PropertyDetailView,
     PropertyImageListCreateView,
+    PropertyImageUpdateView,
     PropertyListCreateView,
 )
 
@@ -17,5 +18,10 @@ urlpatterns = [
         "<int:pk>/images/",
         PropertyImageListCreateView.as_view(),
         name="property-images",
+    ),
+    path(
+        "<int:pk>/images/<int:image_id>/",
+        PropertyImageUpdateView.as_view(),
+        name="property-image-update",
     ),
 ]

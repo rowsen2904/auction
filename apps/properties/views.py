@@ -27,6 +27,7 @@ from .serializers import (
     PropertyCreateSerializer,
     PropertyImageCreateSerializer,
     PropertyImageSerializer,
+    PropertyImageUpdateSerializer,
     PropertyListSerializer,
     PropertyUpdateSerializer,
 )
@@ -231,3 +232,70 @@ class PropertyImageListCreateView(generics.GenericAPIView):
 
         out = PropertyImageSerializer(img, context={"request": request})
         return Response(out.data, status=status.HTTP_201_CREATED)
+
+
+class PropertyImageUpdateView(generics.GenericAPIView):
+    permission_classes = [IsAuthenticated, IsDeveloper]
+    serializer_class = PropertyImageUpdateSerializer
+    parser_classes = [JSONParser]
+
+    def get_property(self) -> Property:
+        return get_object_or_404(
+            Property.objects.only("id", "owner_id"),
+            id=self.kwargs["pk"],
+            owner=self.request.user,
+        )
+
+    def get_image(self, prop: Property) -> PropertyImage:
+        return get_object_or_404(
+            PropertyImage.objects.select_related("property"),
+            id=self.kwargs["image_id"],
+            property=prop,
+        )
+
+    def patch(self, request, *args, **kwargs):
+        prop = self.get_property()
+        image = self.get_image(prop)
+
+        serializer = self.get_serializer(image, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+
+        validated_data = serializer.validated_data
+
+        try:
+            with transaction.atomic():
+                locked_image = PropertyImage.objects.select_for_update().get(
+                    pk=image.pk
+                )
+
+                update_fields = []
+
+                if validated_data.get("is_primary") is True:
+                    PropertyImage.objects.filter(
+                        property=prop,
+                        is_primary=True,
+                    ).exclude(pk=locked_image.pk).update(is_primary=False)
+
+                    locked_image.is_primary = True
+                    update_fields.append("is_primary")
+
+                elif validated_data.get("is_primary") is False:
+                    locked_image.is_primary = False
+                    update_fields.append("is_primary")
+
+                if "sort_order" in validated_data:
+                    locked_image.sort_order = validated_data["sort_order"]
+                    update_fields.append("sort_order")
+
+                if update_fields:
+                    locked_image.save(update_fields=update_fields)
+
+        except IntegrityError:
+            return Response(
+                {"error": _("Ошибка ограничения. Проверьте уникальность sort_order.")},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        locked_image.refresh_from_db()
+        out = PropertyImageSerializer(locked_image, context={"request": request})
+        return Response(out.data, status=status.HTTP_200_OK)

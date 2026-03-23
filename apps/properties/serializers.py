@@ -1,3 +1,4 @@
+from django.utils.translation import gettext_lazy as _
 from rest_framework import serializers
 
 from .models import Property, PropertyImage
@@ -87,6 +88,23 @@ class PropertyImageCreateSerializer(serializers.ModelSerializer):
         # Require at least one source: image or external_url
         if not attrs.get("image") and not attrs.get("external_url"):
             raise serializers.ValidationError(
-                {"non_field_errors": ["Either image or external_url is required."]}
+                {
+                    "non_field_errors": [
+                        _("Требуется либо изображение, либо внешний URL.")
+                    ]
+                }
+            )
+        return attrs
+
+
+class PropertyImageUpdateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = PropertyImage
+        fields = ["is_primary", "sort_order"]
+
+    def validate(self, attrs):
+        if not attrs:
+            raise serializers.ValidationError(
+                {"error": _("Хотя бы одно поле должно быть передано.")}
             )
         return attrs
