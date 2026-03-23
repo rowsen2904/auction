@@ -6,6 +6,7 @@ from auctions.serializers import ClosedSelectWinnerSerializer, ClosedShortlistSe
 from auctions.services.rules import is_admin
 from django.db import transaction
 from django.shortcuts import get_object_or_404
+from django.utils.translation import gettext_lazy as _
 from rest_framework import status
 from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.permissions import IsAuthenticated
@@ -31,15 +32,22 @@ class ClosedShortlistView(APIView):
             )
 
             if auction.mode != Auction.Mode.CLOSED:
-                raise ValidationError({"detail": "Only for CLOSED auctions."})
+                raise ValidationError({"detail": "Только для закрытых аукционов."})
             if auction.status != Auction.Status.FINISHED:
                 raise ValidationError(
-                    {"detail": "Shortlist is allowed only after auction is finished."}
+                    {
+                        "detail": _(
+                            "Составление предварительного списка кандидатов "
+                            "допускается только после завершения аукциона."
+                        )
+                    }
                 )
 
             user = request.user
             if not (is_admin(user) or user.id == auction.owner_id):
-                raise PermissionDenied("Only owner/admin can shortlist.")
+                raise PermissionDenied(
+                    "Только владелец/администратор может добавить в список кандидатов."
+                )
 
             bids = list(
                 Bid.objects.filter(
@@ -48,7 +56,12 @@ class ClosedShortlistView(APIView):
             )
             if len(bids) != len(set(bid_ids)):
                 raise ValidationError(
-                    {"detail": "Some bid_ids do not belong to this auction."}
+                    {
+                        "detail": _(
+                            "Некоторые идентификаторы ставок (bid_id) "
+                            "не относятся к этому аукциону."
+                        )
+                    }
                 )
 
             auction.shortlisted_bids.set([b.id for b in bids])
@@ -74,17 +87,19 @@ class ClosedSelectWinnerView(APIView):
             )
 
             if auction.mode != Auction.Mode.CLOSED:
-                raise ValidationError({"detail": "Only for CLOSED auctions."})
+                raise ValidationError({"detail": "Только для закрытых аукционов."})
             if auction.status != Auction.Status.FINISHED:
                 raise ValidationError(
                     {
-                        "detail": "Winner selection is allowed only after auction is finished."
+                        "detail": "Выбор победителя возможен только после завершения аукциона."
                     }
                 )
 
             user = request.user
             if not (is_admin(user) or user.id == auction.owner_id):
-                raise PermissionDenied("Only owner/admin can select winner.")
+                raise PermissionDenied(
+                    "Победителя может выбрать только владелец/администратор."
+                )
 
             bid = get_object_or_404(
                 Bid.objects.only("id", "auction_id"),
@@ -95,7 +110,7 @@ class ClosedSelectWinnerView(APIView):
 
             if not auction.shortlisted_bids.filter(id=bid.id).exists():
                 raise ValidationError(
-                    {"detail": "Winner must be selected from shortlist."}
+                    {"detail": "Победитель должен быть выбран из списка финалистов."}
                 )
 
             auction.winner_bid_id = bid.id

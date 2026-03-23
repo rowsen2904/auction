@@ -24,10 +24,12 @@ class AuctionJoinView(APIView):
         )
 
         if request.user.id == auction.owner_id:
-            raise ValidationError({"detail": "Owner cannot join as participant."})
+            raise ValidationError(
+                {"detail": "Владелец не может присоединиться в качестве участника."}
+            )
 
         if auction.status in (Auction.Status.CANCELLED, Auction.Status.FINISHED):
-            raise ValidationError({"detail": "Auction is not joinable."})
+            raise ValidationError({"detail": "К аукциону нельзя присоединиться."})
 
         count = add_participant(
             auction_id=auction.id, user_id=request.user.id, end_date=auction.end_date
@@ -60,7 +62,10 @@ class AuctionParticipantsView(APIView):
             is_admin(request.user) or request.user.id == auction.owner_id
         ):
             raise PermissionDenied(
-                "Only owner/admin can view participants for closed auctions."
+                (
+                    "Только владелец/администратор может просматривать "
+                    "список участников завершившихся аукций."
+                )
             )
 
         participants = list_participants(auction_id=auction.id)

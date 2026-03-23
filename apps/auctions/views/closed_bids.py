@@ -21,6 +21,7 @@ from auctions.services.rules import (
 )
 from django.db import transaction
 from django.shortcuts import get_object_or_404
+from django.utils.translation import gettext_lazy as _
 from rest_framework import generics, status
 from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.permissions import IsAuthenticated
@@ -62,7 +63,7 @@ class ClosedBidCreateView(generics.CreateAPIView):
             ensure_mode(
                 ctx,
                 allowed={Auction.Mode.CLOSED},
-                message="HTTP bidding is allowed only for CLOSED auctions.",
+                message="Торги по протоколу HTTP разрешены только для закрытых аукционов.",
             )
             ensure_active_window(ctx)
             ensure_not_owner(ctx)
@@ -72,7 +73,7 @@ class ClosedBidCreateView(generics.CreateAPIView):
                 auction_id=auction.id, broker_id=request.user.id, is_sealed=True
             ).exists():
                 raise ValidationError(
-                    {"detail": "You can place only one bid in a closed auction."}
+                    {"detail": "В закрытом аукционе можно сделать только одну ставку."}
                 )
 
             bid = Bid.objects.create(
@@ -121,7 +122,7 @@ class MyClosedBidUpdateView(generics.UpdateAPIView):
         serializer.is_valid(raise_exception=True)
         amount = serializer.validated_data.get("amount")
         if amount is None:
-            raise ValidationError({"amount": "This field is required."})
+            raise ValidationError({"amount": "Это поле обязательно к заполнению."})
 
         with transaction.atomic():
             auction = get_object_or_404(
@@ -143,7 +144,10 @@ class MyClosedBidUpdateView(generics.UpdateAPIView):
             ensure_mode(
                 ctx,
                 allowed={Auction.Mode.CLOSED},
-                message="HTTP bid update is allowed only for CLOSED auctions.",
+                message=_(
+                    "Обновление ставок по протоколу HTTP "
+                    "разрешено только для закрытых аукционов."
+                ),
             )
             ensure_active_window(ctx)
             ensure_not_owner(ctx)
@@ -206,12 +210,14 @@ class ClosedBidsListForOwnerAdminView(generics.ListAPIView):
         )
 
         if auction.mode != Auction.Mode.CLOSED:
-            raise ValidationError({"detail": "Only for CLOSED auctions."})
+            raise ValidationError({"detail": "Только для закрытых аукционов."})
 
         if not (
             is_admin(self.request.user) or self.request.user.id == auction.owner_id
         ):
-            raise PermissionDenied("Only owner/admin can view sealed bids.")
+            raise PermissionDenied(
+                "Только владелец/администратор может просматривать запечатанные заявки."
+            )
 
         return (
             Bid.objects.filter(auction_id=auction.id, is_sealed=True)

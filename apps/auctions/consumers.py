@@ -108,7 +108,7 @@ def _create_open_bid_atomic(
         ensure_mode(
             ctx,
             allowed={Auction.Mode.OPEN},
-            message="WebSocket bidding is allowed only for OPEN auctions.",
+            message="Торги по протоколу WebSocket разрешены только на открытых аукционах.",
         )
         ensure_active_window(ctx)
         ensure_not_owner(ctx)
@@ -210,24 +210,28 @@ class AuctionLiveBidConsumer(AsyncJsonWebsocketConsumer):
 
     async def receive_json(self, content, **kwargs):
         if content.get("type") != "bid":
-            await self.send_json({"type": "error", "detail": "Unknown message type."})
+            await self.send_json(
+                {"type": "error", "detail": "Неизвестный тип сообщения."}
+            )
             return
 
         user = self.scope.get("user")
         if not user or not getattr(user, "is_authenticated", False):
             await self.send_json(
-                {"type": "error", "detail": "Authentication required."}
+                {"type": "error", "detail": "Требуется аутентификация."}
             )
             return
         if not getattr(user, "is_broker", False):
-            await self.send_json({"type": "error", "detail": "Only broker can bid."})
+            await self.send_json(
+                {"type": "error", "detail": "Только брокер может делать ставки."}
+            )
             return
 
         raw_amount = content.get("amount")
         try:
             requested_amount = Decimal(str(raw_amount))
         except (InvalidOperation, TypeError):
-            await self.send_json({"type": "error", "detail": "Invalid amount."})
+            await self.send_json({"type": "error", "detail": "Неверная сумма."})
             return
 
         try:
@@ -240,7 +244,7 @@ class AuctionLiveBidConsumer(AsyncJsonWebsocketConsumer):
             await self.send_json({"type": "error", "detail": e.detail})
             return
         except Exception:
-            await self.send_json({"type": "error", "detail": "Internal error."})
+            await self.send_json({"type": "error", "detail": "Внутренняя ошибка."})
             return
 
         # If participant is new -> notify everyone in realtime
