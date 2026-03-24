@@ -53,14 +53,16 @@ class Property(models.Model):
     )
 
     type = models.CharField(
+        _("Тип"),
         max_length=32,
         choices=PropertyTypes.choices,
         db_index=True,
     )
 
-    address = models.CharField(max_length=255, unique=True)
+    address = models.CharField(_("Адрес"), max_length=255, unique=True)
 
     area = models.DecimalField(
+        _("Площадь"),
         max_digits=10,
         decimal_places=2,
         validators=[MinValueValidator(Decimal("0.01"))],
@@ -68,28 +70,32 @@ class Property(models.Model):
     )
 
     property_class = models.CharField(
+        _("Класс объекта"),
         max_length=32,
         choices=PropertyClasses.choices,
         db_index=True,
     )
 
     price = models.DecimalField(
+        _("Цена"),
         max_digits=14,
         decimal_places=2,
         validators=[MinValueValidator(Decimal("0.00"))],
         db_index=True,
     )
-    currency = models.CharField(max_length=3, default="RUB")
+    currency = models.CharField(_("Валюта"), max_length=3, default="RUB")
 
-    deadline = models.DateField(null=True, blank=True, db_index=True)
+    deadline = models.DateField(_("Дедлайн"), null=True, blank=True, db_index=True)
 
     status = models.CharField(
+        _("Статус"),
         max_length=16,
         choices=PropertyStatuses.choices,
         default=PropertyStatuses.DRAFT,
         db_index=True,
     )
     moderation_status = models.CharField(
+        _("Статус модерации"),
         max_length=16,
         choices=ModerationStatuses.choices,
         default=ModerationStatuses.PENDING,
@@ -100,8 +106,8 @@ class Property(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        verbose_name = _("property")
-        verbose_name_plural = _("properties")
+        verbose_name = _("Объект")
+        verbose_name_plural = _("Объекты")
         indexes = [
             models.Index(
                 fields=["owner", "-created_at"], name="prop_owner_created_idx"
