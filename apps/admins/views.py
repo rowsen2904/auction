@@ -151,6 +151,7 @@ class PendingPropertiesListView(generics.ListAPIView):
         return (
             Property.objects.select_related("owner")
             .filter(moderation_status=Property.ModerationStatuses.PENDING)
+            .exlude(status=Property.PropertyStatuses.DRAFT)
             .order_by("-created_at")
         )
 
