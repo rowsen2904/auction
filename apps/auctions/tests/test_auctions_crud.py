@@ -190,3 +190,44 @@ class TestAuctionsCRUD(APITestCase, AuctionTestMixin):
         self.assertIn("одобрен", resp.data["real_property"][0].lower())
 
         schedule_mock.assert_not_called()
+
+    @patch("auctions.serializers.schedule_auction_status_tasks")
+    def test_create_denies_second_auction_for_same_property(self, schedule_mock):
+        self.client.force_authenticate(user=self.dev1)
+        now = timezone.now()
+
+        with self.captureOnCommitCallbacks(execute=True):
+            first_resp = self.client.post(
+                self.BASE,
+                data={
+                    "property_id": self.prop1.id,
+                    "mode": Auction.Mode.OPEN,
+                    "min_price": "1000.00",
+                    "start_date": (now + timedelta(hours=2)).isoformat(),
+                    "end_date": (now + timedelta(days=1)).isoformat(),
+                },
+                format="json",
+            )
+
+        self.assertEqual(first_resp.status_code, status.HTTP_201_CREATED)
+
+        second_resp = self.client.post(
+            self.BASE,
+            data={
+                "property_id": self.prop1.id,
+                "mode": Auction.Mode.CLOSED,
+                "min_price": "2000.00",
+                "start_date": (now + timedelta(days=2)).isoformat(),
+                "end_date": (now + timedelta(days=3)).isoformat(),
+            },
+            format="json",
+        )
+
+        self.assertEqual(second_resp.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("real_property", second_resp.data)
+        self.assertIn("уже создан", second_resp.data["real_property"][0].lower())
+        self.assertEqual(
+            Auction.objects.filter(real_property_id=self.prop1.id).count(),
+            1,
+        )
+        self.assertEqual(schedule_mock.call_count, 1)

@@ -108,6 +108,10 @@ class Auction(models.Model):
             models.Index(fields=["owner", "-created_at"], name="auc_owner_created_idx"),
         ]
         constraints = [
+            models.UniqueConstraint(
+                fields=["real_property"],
+                name="unique_auction_per_property",
+            ),
             models.CheckConstraint(
                 check=Q(end_date__gt=models.F("start_date")),
                 name="auc_end_gt_start",

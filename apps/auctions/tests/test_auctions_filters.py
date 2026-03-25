@@ -17,12 +17,16 @@ class TestAuctionsFilters(APITestCase, AuctionTestMixin):
         self.prop1 = self.create_property(self.dev1, address="Dev1 Property A")
         self.prop2 = self.create_property(self.dev2, address="Dev2 Property B")
 
+    def make_property(self, owner, suffix: str):
+        return self.create_property(owner, address=f"{owner.email} Property {suffix}")
+
     def test_list_paginated(self):
         now = timezone.now()
-        for _ in range(21):
+        for i in range(21):
+            prop = self.make_property(self.dev1, f"paginated-{i}")
             self.create_auction(
                 owner=self.dev1,
-                prop=self.prop1,
+                prop=prop,
                 mode=Auction.Mode.OPEN,
                 status_val=Auction.Status.SCHEDULED,
                 start=now + timedelta(hours=2),
@@ -36,9 +40,12 @@ class TestAuctionsFilters(APITestCase, AuctionTestMixin):
 
     def test_list_filters_mode_status(self):
         now = timezone.now()
+        open_prop = self.make_property(self.dev1, "open-active")
+        closed_prop = self.make_property(self.dev1, "closed-active")
+
         self.create_auction(
             owner=self.dev1,
-            prop=self.prop1,
+            prop=open_prop,
             mode=Auction.Mode.OPEN,
             status_val=Auction.Status.ACTIVE,
             start=now - timedelta(minutes=1),
@@ -46,7 +53,7 @@ class TestAuctionsFilters(APITestCase, AuctionTestMixin):
         )
         self.create_auction(
             owner=self.dev1,
-            prop=self.prop1,
+            prop=closed_prop,
             mode=Auction.Mode.CLOSED,
             status_val=Auction.Status.ACTIVE,
             start=now - timedelta(minutes=1),
@@ -83,23 +90,28 @@ class TestAuctionsFilters(APITestCase, AuctionTestMixin):
 
     def test_list_active_true(self):
         now = timezone.now()
+
+        active_prop = self.make_property(self.dev1, "active-now")
+        scheduled_prop = self.make_property(self.dev1, "scheduled-now")
+        finished_window_prop = self.make_property(self.dev1, "active-old")
+
         active = self.create_auction(
             owner=self.dev1,
-            prop=self.prop1,
+            prop=active_prop,
             status_val=Auction.Status.ACTIVE,
             start=now - timedelta(minutes=10),
             end=now + timedelta(minutes=10),
         )
         self.create_auction(
             owner=self.dev1,
-            prop=self.prop1,
+            prop=scheduled_prop,
             status_val=Auction.Status.SCHEDULED,
             start=now - timedelta(minutes=10),
             end=now + timedelta(minutes=10),
         )
         self.create_auction(
             owner=self.dev1,
-            prop=self.prop1,
+            prop=finished_window_prop,
             status_val=Auction.Status.ACTIVE,
             start=now - timedelta(days=2),
             end=now - timedelta(days=1),
@@ -112,15 +124,19 @@ class TestAuctionsFilters(APITestCase, AuctionTestMixin):
 
     def test_list_starts_after_ends_before(self):
         now = timezone.now()
+
+        prop1 = self.make_property(self.dev1, "ends-before-1")
+        prop2 = self.make_property(self.dev1, "ends-before-2")
+
         a1 = self.create_auction(
             owner=self.dev1,
-            prop=self.prop1,
+            prop=prop1,
             start=now + timedelta(hours=2),
             end=now + timedelta(hours=5),
         )
         self.create_auction(
             owner=self.dev1,
-            prop=self.prop1,
+            prop=prop2,
             start=now + timedelta(hours=2),
             end=now + timedelta(days=2),
         )
@@ -134,18 +150,22 @@ class TestAuctionsFilters(APITestCase, AuctionTestMixin):
         ids = [row["id"] for row in resp.data["results"]]
         self.assertIn(a1.id, ids)
 
+        early_prop = self.make_property(self.dev1, "starts-after-early")
+        late_prop = self.make_property(self.dev1, "starts-after-late")
+
         early = self.create_auction(
             owner=self.dev1,
-            prop=self.prop1,
+            prop=early_prop,
             start=now + timedelta(hours=1),
             end=now + timedelta(hours=10),
         )
         late = self.create_auction(
             owner=self.dev1,
-            prop=self.prop1,
+            prop=late_prop,
             start=now + timedelta(hours=10),
             end=now + timedelta(hours=20),
         )
+
         resp2 = self.client.get(
             self.BASE,
             data={"starts_after": (now + timedelta(hours=2)).isoformat()},
@@ -158,16 +178,20 @@ class TestAuctionsFilters(APITestCase, AuctionTestMixin):
 
     def test_list_ordering(self):
         now = timezone.now()
+
+        prop1 = self.make_property(self.dev1, "ordering-1")
+        prop2 = self.make_property(self.dev1, "ordering-2")
+
         a1 = self.create_auction(
             owner=self.dev1,
-            prop=self.prop1,
+            prop=prop1,
             current_price=Decimal("5000.00"),
             start=now + timedelta(hours=2),
             end=now + timedelta(days=1),
         )
         a2 = self.create_auction(
             owner=self.dev1,
-            prop=self.prop1,
+            prop=prop2,
             current_price=Decimal("2000.00"),
             start=now + timedelta(hours=2),
             end=now + timedelta(days=1),

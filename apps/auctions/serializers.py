@@ -86,6 +86,11 @@ class AuctionCreateSerializer(serializers.ModelSerializer):
                 }
             )
 
+        if Auction.objects.filter(real_property_id=prop.id).exists():
+            raise serializers.ValidationError(
+                {"real_property": "Для этого объекта недвижимости аукцион уже создан."}
+            )
+
         if start and start < now + min_offset:
             raise serializers.ValidationError(
                 {
