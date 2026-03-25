@@ -65,6 +65,17 @@ class PropertyCreateSerializer(serializers.ModelSerializer):
 
 
 class PropertyUpdateSerializer(serializers.ModelSerializer):
+    RESET_MODERATION_FIELDS = {
+        "type",
+        "address",
+        "area",
+        "property_class",
+        "price",
+        "currency",
+        "deadline",
+        "status",
+    }
+
     class Meta:
         model = Property
         fields = [
@@ -77,6 +88,24 @@ class PropertyUpdateSerializer(serializers.ModelSerializer):
             "deadline",
             "status",
         ]
+
+    def update(self, instance, validated_data):
+        has_changes = any(
+            field in validated_data
+            and getattr(instance, field) != validated_data[field]
+            for field in self.RESET_MODERATION_FIELDS
+        )
+
+        instance = super().update(instance, validated_data)
+
+        if (
+            has_changes
+            and instance.moderation_status != Property.ModerationStatuses.PENDING
+        ):
+            instance.moderation_status = Property.ModerationStatuses.PENDING
+            instance.save(update_fields=["moderation_status", "updated_at"])
+
+        return instance
 
 
 class PropertyImageCreateSerializer(serializers.ModelSerializer):

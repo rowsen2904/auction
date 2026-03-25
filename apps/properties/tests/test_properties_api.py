@@ -247,3 +247,45 @@ class PropertyAPITests(BasePropertyTestCase):
 
         prop.refresh_from_db()
         self.assertEqual(prop.price, Decimal("9999999.00"))
+
+    def test_patch_property_resets_moderation_status_to_pending_on_change(self):
+        prop = self._create_property(
+            self.dev1,
+            address="Moderation Reset On Change",
+            price=Decimal("12000000.00"),
+            moderation_status_val=Property.ModerationStatuses.APPROVED,
+        )
+
+        self.client.force_authenticate(user=self.dev1)
+        resp = self.client.patch(
+            f"{BASE}{prop.id}/",
+            data={"price": "9999999.00"},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+
+        prop.refresh_from_db()
+        self.assertEqual(prop.price, Decimal("9999999.00"))
+        self.assertEqual(prop.moderation_status, Property.ModerationStatuses.PENDING)
+
+    def test_patch_property_does_not_reset_moderation_status_when_value_not_changed(
+        self,
+    ):
+        prop = self._create_property(
+            self.dev1,
+            address="Moderation Not Reset Without Change",
+            price=Decimal("12000000.00"),
+            moderation_status_val=Property.ModerationStatuses.APPROVED,
+        )
+
+        self.client.force_authenticate(user=self.dev1)
+        resp = self.client.patch(
+            f"{BASE}{prop.id}/",
+            data={"price": "12000000.00"},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+
+        prop.refresh_from_db()
+        self.assertEqual(prop.price, Decimal("12000000.00"))
+        self.assertEqual(prop.moderation_status, Property.ModerationStatuses.APPROVED)
