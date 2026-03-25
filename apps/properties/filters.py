@@ -52,3 +52,7 @@ class MyPropertyFilter(BasePropertyFilter):
 
     class Meta(BasePropertyFilter.Meta):
         fields = BasePropertyFilter.Meta.fields + ["status"]
+
+
+class PendingPropertyFilter(BasePropertyFilter):
+    pass

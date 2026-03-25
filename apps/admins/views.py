@@ -1,7 +1,7 @@
 from django.contrib.auth import get_user_model
 from django.shortcuts import get_object_or_404
 from django.utils.translation import gettext_lazy as _
-from properties.filters import PublicPropertyFilter
+from properties.filters import PendingPropertyFilter
 from properties.models import Property
 from rest_framework import generics, status
 from rest_framework.exceptions import ValidationError
@@ -145,8 +145,7 @@ class UserActiveUpdateView(generics.GenericAPIView):
 class PendingPropertiesListView(generics.ListAPIView):
     permission_classes = [IsAdminUser]
     serializer_class = PendingPropertySerializer
-    # TODO: Check the status filter
-    filterset_class = PublicPropertyFilter
+    filterset_class = PendingPropertyFilter
 
     def get_queryset(self):
         return (
