@@ -13,6 +13,12 @@ from .models import Auction, Bid
 from .tasks import schedule_auction_status_tasks
 
 
+class AuctionPropertySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Property
+        fields = ["id", "address"]
+
+
 class BidSerializer(serializers.ModelSerializer):
     broker_id = serializers.IntegerField(read_only=True)
 
@@ -24,8 +30,7 @@ class BidSerializer(serializers.ModelSerializer):
 
 class AuctionListSerializer(serializers.ModelSerializer):
     # Model has real_property, but API expects property_id
-    property_id = serializers.IntegerField(source="real_property_id", read_only=True)
-
+    real_property = AuctionPropertySerializer(read_only=True)
     owner_id = serializers.IntegerField(read_only=True)
     highest_bid_id = serializers.IntegerField(read_only=True)
     winner_bid_id = serializers.IntegerField(read_only=True)
@@ -34,7 +39,7 @@ class AuctionListSerializer(serializers.ModelSerializer):
         model = Auction
         fields = [
             "id",
-            "property_id",
+            "real_property",
             "owner_id",
             "mode",
             "min_price",

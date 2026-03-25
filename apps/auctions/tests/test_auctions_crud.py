@@ -158,7 +158,8 @@ class TestAuctionsCRUD(APITestCase, AuctionTestMixin):
         self.assertEqual(resp.status_code, status.HTTP_201_CREATED)
         auc = Auction.objects.get(id=resp.data["id"])
         self.assertEqual(auc.status, Auction.Status.SCHEDULED)
-        self.assertEqual(resp.data["property_id"], self.prop1.id)
+        self.assertEqual(resp.data["real_property"]["id"], self.prop1.id)
+        self.assertEqual(resp.data["real_property"]["address"], self.prop1.address)
 
         schedule_mock.assert_called_once()
         _, kwargs = schedule_mock.call_args
