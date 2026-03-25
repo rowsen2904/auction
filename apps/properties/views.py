@@ -9,7 +9,7 @@ from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 
-from .filters import PropertyFilter
+from .filters import MyPropertyFilter, PublicPropertyFilter
 from .models import Property, PropertyImage
 from .pagination import PropertyPagination
 from .permissions import IsPropertyOwner
@@ -37,7 +37,7 @@ from .serializers import (
 
 class PropertyListCreateView(generics.ListCreateAPIView):
     pagination_class = PropertyPagination
-    filterset_class = PropertyFilter
+    filterset_class = PublicPropertyFilter
     ordering_fields = ["price", "created_at", "deadline", "area"]
     ordering = ["-created_at"]
 
@@ -79,7 +79,7 @@ class PropertyListCreateView(generics.ListCreateAPIView):
 
 class MyPropertiesView(generics.ListAPIView):
     pagination_class = PropertyPagination
-    filterset_class = PropertyFilter
+    filterset_class = MyPropertyFilter
     ordering_fields = ["price", "created_at", "deadline", "area"]
     ordering = ["-created_at"]
     permission_classes = [IsAuthenticated, IsDeveloper]
