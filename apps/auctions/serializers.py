@@ -71,7 +71,7 @@ class AuctionCreateSerializer(serializers.ModelSerializer):
         end = attrs.get("end_date")
         now = timezone.now()
 
-        min_offset = getattr(settings, "AUCTION_MIN_START_OFFSET", timedelta(hours=1))
+        min_offset = getattr(settings, "AUCTION_MIN_START_OFFSET", timedelta(seconds=1))
         min_dur = getattr(settings, "AUCTION_MIN_DURATION", timedelta(hours=1))
         max_dur = getattr(settings, "AUCTION_MAX_DURATION", timedelta(days=30))
 
