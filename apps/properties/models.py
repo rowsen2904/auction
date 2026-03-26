@@ -83,7 +83,6 @@ class Property(models.Model):
         validators=[MinValueValidator(Decimal("0.00"))],
         db_index=True,
     )
-    currency = models.CharField(_("Валюта"), max_length=3, default="RUB")
 
     deadline = models.DateField(_("Дедлайн"), null=True, blank=True, db_index=True)
 

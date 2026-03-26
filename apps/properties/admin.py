@@ -73,7 +73,6 @@ class PropertyAdmin(admin.ModelAdmin):
         "type",
         "property_class",
         "price",
-        "currency",
         "status",
         "moderation_status",
         "owner",
@@ -84,7 +83,6 @@ class PropertyAdmin(admin.ModelAdmin):
         "property_class",
         "status",
         "moderation_status",
-        "currency",
         ("created_at", admin.DateFieldListFilter),
         ("deadline", admin.DateFieldListFilter),
     )
@@ -107,7 +105,7 @@ class PropertyAdmin(admin.ModelAdmin):
                 )
             },
         ),
-        ("Details", {"fields": ("address", "area", "price", "currency", "deadline")}),
+        ("Details", {"fields": ("address", "area", "price", "deadline")}),
         ("Timestamps", {"fields": ("created_at", "updated_at")}),
     )
 

@@ -74,7 +74,6 @@ class PendingPropertySerializer(serializers.ModelSerializer):
             "address",
             "area",
             "price",
-            "currency",
             "deadline",
             "status",
             "moderation_status",

@@ -16,7 +16,6 @@ class BasePropertyFilter(filters.FilterSet):
         fields = [
             "type",
             "property_class",
-            "currency",
             "deadline",
             "address",
             "price_min",

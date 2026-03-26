@@ -42,7 +42,6 @@ PROPERTIES_LIST_DOC = _(
     "- `type`\n"
     "- `property_class`\n"
     "- `status`\n"
-    "- `currency`\n"
     "- `address` (icontains)\n"
     "- `price_min`, `price_max`\n"
     "- `area_min`, `area_max`\n\n"
@@ -123,7 +122,6 @@ properties_list_schema = extend_schema(
                                 "area": "52.50",
                                 "property_class": "comfort",
                                 "price": "12000000.00",
-                                "currency": "RUB",
                                 "deadline": "2026-10-01",
                                 "status": "published",
                                 "images": [],
@@ -163,12 +161,6 @@ properties_list_schema = extend_schema(
         ),
         OpenApiParameter(
             name="status",
-            type=OpenApiTypes.STR,
-            required=False,
-            location=OpenApiParameter.QUERY,
-        ),
-        OpenApiParameter(
-            name="currency",
             type=OpenApiTypes.STR,
             required=False,
             location=OpenApiParameter.QUERY,
@@ -238,7 +230,6 @@ my_properties_list_schema = extend_schema(
                                 "area": "52.50",
                                 "property_class": "comfort",
                                 "price": "12000000.00",
-                                "currency": "RUB",
                                 "deadline": "2026-10-01",
                                 "status": "published",
                                 "images": [],
@@ -274,12 +265,6 @@ my_properties_list_schema = extend_schema(
         ),
         OpenApiParameter(
             "status", OpenApiTypes.STR, required=False, location=OpenApiParameter.QUERY
-        ),
-        OpenApiParameter(
-            "currency",
-            OpenApiTypes.STR,
-            required=False,
-            location=OpenApiParameter.QUERY,
         ),
         OpenApiParameter(
             "address", OpenApiTypes.STR, required=False, location=OpenApiParameter.QUERY
@@ -338,7 +323,6 @@ properties_create_schema = extend_schema(
                         "area": "52.50",
                         "property_class": "comfort",
                         "price": "12000000.00",
-                        "currency": "RUB",
                         "deadline": "2026-10-01",
                         "status": "draft",
                     },

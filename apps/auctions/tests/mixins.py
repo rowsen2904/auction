@@ -75,7 +75,6 @@ class AuctionTestMixin:
             area=area,
             property_class=p_class,
             price=price,
-            currency="RUB",
             status=status_val,
         )
 
