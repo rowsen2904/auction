@@ -225,8 +225,11 @@ STATIC_ROOT = os.getenv("STATIC_ROOT", BASE_DIR / "staticfiles")
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 
-# Logs
+DATA_UPLOAD_MAX_MEMORY_SIZE = 1024 * 1024 * 15  # 15 MB
+FILE_UPLOAD_MAX_MEMORY_SIZE = 1024 * 1024 * 15  # 15 MB
 
+
+# Logs
 LOG_DIR = BASE_DIR / "logs"
 LOG_DIR.mkdir(exist_ok=True)
 
