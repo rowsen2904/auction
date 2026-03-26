@@ -1,8 +1,6 @@
 from django.urls import path
 
 from .views import (
-    BrokerDocumentNamesUpdateView,
-    BrokerDocumentsUploadView,
     CustomTokenRefreshView,
     GetVerificationCodeView,
     LoginView,
@@ -10,6 +8,8 @@ from .views import (
     RegisterBrokerView,
     RegisterDeveloperView,
     ResendCodeView,
+    UserDocumentNameUpdateView,
+    UserDocumentsUploadView,
     VerifyEmailView,
 )
 
@@ -27,18 +27,22 @@ urlpatterns = [
         RegisterDeveloperView.as_view(),
         name="register-developer",
     ),
-    path("register/broker/", RegisterBrokerView.as_view(), name="register-broker"),
-    # Get user profile (me)
-    path("me/", MeView.as_view(), name="me"),
-    # Broker documents
     path(
-        "broker/upload-documents/",
-        BrokerDocumentsUploadView.as_view(),
-        name="broker-upload-documents",
+        "register/broker/",
+        RegisterBrokerView.as_view(),
+        name="register-broker",
+    ),
+    # Current user
+    path("me/", MeView.as_view(), name="me"),
+    # User documents
+    path(
+        "documents/upload/",
+        UserDocumentsUploadView.as_view(),
+        name="documents-upload",
     ),
     path(
-        "broker/update-document-names/",
-        BrokerDocumentNamesUpdateView.as_view(),
-        name="broker-update-document-names",
+        "documents/update-name/",
+        UserDocumentNameUpdateView.as_view(),
+        name="documents-update-name",
     ),
 ]

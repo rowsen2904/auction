@@ -1,4 +1,3 @@
-# apps/admins/schemas.py
 from __future__ import annotations
 
 from drf_spectacular.utils import (
@@ -9,20 +8,20 @@ from drf_spectacular.utils import (
 )
 from rest_framework import serializers
 
+from apps.users.serializers import TokenUserSerializer
+
 from .serializers import PendingPropertySerializer, UserActiveUpdateSerializer
 
 broker_verify_schema = extend_schema(
     tags=["Admin"],
     summary="Verify or reject broker",
     description=(
-        "Admin endpoint to accept/reject broker verification.\n\n"
+        "Admin endpoint to accept or reject broker verification.\n\n"
         "Request:\n"
         "- id: broker user id\n"
         "- action: accept | reject\n\n"
         "Response:\n"
         "- message: human readable result\n"
-        "- broker_user_id: id from request\n"
-        "- status: accepted | rejected\n"
     ),
     request=inline_serializer(
         name="BrokerVerifyRequest",
@@ -36,8 +35,6 @@ broker_verify_schema = extend_schema(
             name="BrokerVerifyResponse",
             fields={
                 "message": serializers.CharField(),
-                "broker_user_id": serializers.IntegerField(),
-                "status": serializers.ChoiceField(choices=["accepted", "rejected"]),
             },
         ),
         400: OpenApiResponse(
@@ -53,31 +50,33 @@ user_list_schema = extend_schema(
     tags=["Admin"],
     summary="List users",
     description=(
-        "Admin list of users with optional broker/developer nested info.\n\n"
+        "Admin list of users with optional broker/developer nested info and user documents.\n\n"
         "Supports:\n"
         "- filtering via UserFilter\n"
         "- ordering via ?ordering=\n"
-        "- pagination (default DRF pagination)\n"
+        "- pagination\n\n"
+        "Note:\n"
+        "- Documents belong to the user.\n"
+        "- Admin users should return an empty documents list.\n"
     ),
     parameters=[
-        # Common filters (если у тебя UserFilter поддерживает больше — добавь сюда)
         OpenApiParameter(
             name="search",
             required=False,
             type=str,
-            description="Search by email / name (if enabled).",
+            description="Search by email / name (only if supported by UserFilter).",
         ),
         OpenApiParameter(
             name="email",
             required=False,
             type=str,
-            description="Filter by exact email (if enabled).",
+            description="Filter by exact email (only if supported by UserFilter).",
         ),
         OpenApiParameter(
             name="role",
             required=False,
             type=str,
-            description="Filter by role: developer|broker|admin",
+            description="Filter by role: developer | broker | admin",
         ),
         OpenApiParameter(
             name="is_active",
@@ -92,13 +91,16 @@ user_list_schema = extend_schema(
             description="Ordering fields: date_joined, email, role, is_active. Example: -date_joined",
         ),
         OpenApiParameter(
-            name="page", required=False, type=int, description="Page number"
+            name="page",
+            required=False,
+            type=int,
+            description="Page number",
         ),
         OpenApiParameter(
             name="page_size",
             required=False,
             type=int,
-            description="Items per page (if enabled)",
+            description="Items per page (if enabled by paginator)",
         ),
     ],
     responses={
@@ -108,43 +110,7 @@ user_list_schema = extend_schema(
                 "count": serializers.IntegerField(),
                 "next": serializers.URLField(allow_null=True),
                 "previous": serializers.URLField(allow_null=True),
-                "results": serializers.ListField(
-                    child=inline_serializer(
-                        name="UserListItem",
-                        fields={
-                            "id": serializers.IntegerField(),
-                            "email": serializers.EmailField(),
-                            "first_name": serializers.CharField(allow_blank=True),
-                            "last_name": serializers.CharField(allow_blank=True),
-                            "role": serializers.CharField(),
-                            "is_active": serializers.BooleanField(),
-                            "is_staff": serializers.BooleanField(),
-                            "date_joined": serializers.DateTimeField(),
-                            "broker": inline_serializer(
-                                name="UserListBrokerInfo",
-                                fields={
-                                    "id": serializers.IntegerField(),
-                                    "is_verified": serializers.BooleanField(),
-                                    "verification_status": serializers.CharField(),
-                                    "verified_at": serializers.DateTimeField(
-                                        allow_null=True
-                                    ),
-                                    "rejected_at": serializers.DateTimeField(
-                                        allow_null=True
-                                    ),
-                                    "inn_number": serializers.CharField(),
-                                },
-                            ),
-                            "developer": inline_serializer(
-                                name="UserListDeveloperInfo",
-                                fields={
-                                    "id": serializers.IntegerField(),
-                                    "company_name": serializers.CharField(),
-                                },
-                            ),
-                        },
-                    )
-                ),
+                "results": TokenUserSerializer(many=True),
             },
         ),
         401: OpenApiResponse(description="Unauthorized"),
@@ -176,6 +142,7 @@ user_active_update_schema = extend_schema(
     },
 )
 
+
 pending_properties_list_schema = extend_schema(
     tags=["Admin"],
     summary="List pending properties",
@@ -186,7 +153,10 @@ pending_properties_list_schema = extend_schema(
     ),
     parameters=[
         OpenApiParameter(
-            name="page", required=False, type=int, description="Page number"
+            name="page",
+            required=False,
+            type=int,
+            description="Page number",
         ),
         OpenApiParameter(
             name="page_size",

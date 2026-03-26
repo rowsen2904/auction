@@ -11,9 +11,6 @@ VERIFY_URL = "/api/v1/admin/broker/verify/"
 
 class TestBrokerVerificationEndpoint(APITestCase):
     def setUp(self):
-        # Create admin that will pass both:
-        # - DRF IsAdminUser (is_staff)
-        # - custom role-based checks (role=ADMIN), if you use them anywhere
         self.admin = User.objects.create_user(
             email="admin@example.com",
             password="StrongPass123!",
@@ -23,17 +20,16 @@ class TestBrokerVerificationEndpoint(APITestCase):
             is_superuser=True,
         )
 
-        # Create broker user + broker profile
         self.broker_user = User.objects.create_user(
             email="broker@example.com",
             password="StrongPass123!",
             role=User.Roles.BROKER,
             is_active=True,
+            inn_number="7707083893",
         )
 
         self.broker = Broker.objects.create(
             user=self.broker_user,
-            inn_number="7707083893",
             verification_status=Broker.VerificationStatuses.PENDING,
             is_verified=False,
             verified_at=None,
@@ -49,10 +45,12 @@ class TestBrokerVerificationEndpoint(APITestCase):
             format="json",
         )
         self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.assertIn("message", resp.data)
 
         self.broker.refresh_from_db()
         self.assertEqual(
-            self.broker.verification_status, Broker.VerificationStatuses.ACCEPTED
+            self.broker.verification_status,
+            Broker.VerificationStatuses.ACCEPTED,
         )
         self.assertTrue(self.broker.is_verified)
         self.assertIsNotNone(self.broker.verified_at)
@@ -67,10 +65,12 @@ class TestBrokerVerificationEndpoint(APITestCase):
             format="json",
         )
         self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.assertIn("message", resp.data)
 
         self.broker.refresh_from_db()
         self.assertEqual(
-            self.broker.verification_status, Broker.VerificationStatuses.REJECTED
+            self.broker.verification_status,
+            Broker.VerificationStatuses.REJECTED,
         )
         self.assertFalse(self.broker.is_verified)
         self.assertIsNotNone(self.broker.rejected_at)
@@ -131,6 +131,7 @@ class TestBrokerVerificationEndpoint(APITestCase):
             password="StrongPass123!",
             role=User.Roles.BROKER,
             is_active=True,
+            inn_number="123456789012",
         )
 
         resp = self.client.post(
@@ -162,7 +163,8 @@ class TestBrokerVerificationEndpoint(APITestCase):
 
         self.broker.refresh_from_db()
         self.assertEqual(
-            self.broker.verification_status, Broker.VerificationStatuses.ACCEPTED
+            self.broker.verification_status,
+            Broker.VerificationStatuses.ACCEPTED,
         )
         self.assertTrue(self.broker.is_verified)
         self.assertEqual(self.broker.verified_at, first_verified_at)
@@ -190,7 +192,8 @@ class TestBrokerVerificationEndpoint(APITestCase):
 
         self.broker.refresh_from_db()
         self.assertEqual(
-            self.broker.verification_status, Broker.VerificationStatuses.REJECTED
+            self.broker.verification_status,
+            Broker.VerificationStatuses.REJECTED,
         )
         self.assertFalse(self.broker.is_verified)
         self.assertEqual(self.broker.rejected_at, first_rejected_at)

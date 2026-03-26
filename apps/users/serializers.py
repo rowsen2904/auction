@@ -11,11 +11,37 @@ from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from helpers.validators import FileSizeValidationMixin
 from migtender.settings import EMAIL_VERIFICATION_CODE_LENGTH
 
-from .models import Broker, Developer
+from .models import Broker, Developer, UserDocument
 from .utils import is_email_verified_for_registration, verify_code
 from .validators import validate_inn
 
 User = get_user_model()
+
+
+class UserDocumentSerializer(serializers.ModelSerializer):
+    url = serializers.SerializerMethodField()
+    filename = serializers.CharField(read_only=True)
+    extension = serializers.CharField(read_only=True)
+
+    class Meta:
+        model = UserDocument
+        fields = (
+            "id",
+            "doc_type",
+            "document_name",
+            "url",
+            "filename",
+            "extension",
+            "created_at",
+            "updated_at",
+        )
+
+    def get_url(self, obj):
+        if not obj.document:
+            return None
+        request = self.context.get("request")
+        url = obj.document.url
+        return request.build_absolute_uri(url) if request else url
 
 
 class TokenUserSerializer(serializers.Serializer):
@@ -28,9 +54,9 @@ class TokenUserSerializer(serializers.Serializer):
 
     broker = serializers.SerializerMethodField()
     developer = serializers.SerializerMethodField()
+    documents = serializers.SerializerMethodField()
 
     def get_broker(self, obj):
-        # Return broker fields only for broker users (or if broker exists)
         broker = getattr(obj, "broker", None)
         if not broker:
             return None
@@ -41,6 +67,15 @@ class TokenUserSerializer(serializers.Serializer):
         if not developer:
             return None
         return DeveloperInfoSerializer(developer, context=self.context).data
+
+    def get_documents(self, obj):
+        if obj.role == User.Roles.ADMIN:
+            return []
+        return UserDocumentSerializer(
+            obj.documents.all(),
+            many=True,
+            context=self.context,
+        ).data
 
 
 class LoginSerializer(TokenObtainPairSerializer):
@@ -54,17 +89,18 @@ class LoginSerializer(TokenObtainPairSerializer):
             self.fields[self.username_field].write_only = True
 
     def validate(self, attrs):
-        User = get_user_model()
+        user_model = get_user_model()
 
         identifier = attrs.get(self.username_field)
         password = attrs.get("password")
 
         if not identifier or not password:
             raise AuthenticationFailed(
-                _("Please provide credentials."), code="missing_credentials"
+                _("Please provide credentials."),
+                code="missing_credentials",
             )
 
-        if not User._default_manager.filter(
+        if not user_model._default_manager.filter(
             **{self.username_field: identifier}
         ).exists():
             raise AuthenticationFailed(_("User not found."), code="user_not_found")
@@ -75,7 +111,8 @@ class LoginSerializer(TokenObtainPairSerializer):
         )
         if user is None:
             raise AuthenticationFailed(
-                _("Invalid credentials."), code="invalid_credentials"
+                _("Invalid credentials."),
+                code="invalid_credentials",
             )
 
         refresh = self.get_token(user)
@@ -83,25 +120,15 @@ class LoginSerializer(TokenObtainPairSerializer):
         return {
             "refresh": str(refresh),
             "access": str(refresh.access_token),
-            "user": TokenUserSerializer(user).data,
+            "user": TokenUserSerializer(user, context=self.context).data,
         }
 
 
 class EmailSerializer(serializers.Serializer):
-    """Email input serializer."""
-
     email = serializers.EmailField()
 
 
 class VerifyEmailSerializer(serializers.Serializer):
-    """
-    Verify email OTP code serializer.
-
-    IMPORTANT:
-    - No user creation
-    - Only validates the OTP
-    """
-
     email = serializers.EmailField()
     code = serializers.CharField(
         max_length=EMAIL_VERIFICATION_CODE_LENGTH,
@@ -116,12 +143,8 @@ class VerifyEmailSerializer(serializers.Serializer):
         return data
 
 
-# Register serializers
-
-
 class BaseRegisterSerializer(serializers.Serializer):
     email = serializers.EmailField()
-
     password = serializers.CharField(
         write_only=True,
         min_length=8,
@@ -134,7 +157,6 @@ class BaseRegisterSerializer(serializers.Serializer):
         max_length=128,
         style={"input_type": "password"},
     )
-
     first_name = serializers.CharField(required=False, allow_blank=True, max_length=150)
     last_name = serializers.CharField(required=False, allow_blank=True, max_length=150)
 
@@ -143,12 +165,14 @@ class BaseRegisterSerializer(serializers.Serializer):
 
         if not is_email_verified_for_registration(email):
             raise serializers.ValidationError(
-                _("Email is not verified."), code="email_not_verified"
+                _("Email is not verified."),
+                code="email_not_verified",
             )
 
         if User.objects.filter(email=email).exists():
             raise serializers.ValidationError(
-                _("User already exists."), code="email_already_registered"
+                _("User already exists."),
+                code="email_already_registered",
             )
 
         return email
@@ -163,32 +187,27 @@ class BaseRegisterSerializer(serializers.Serializer):
                 code="passwords_do_not_match",
             )
 
-        # Run Django password validators (AUTH_PASSWORD_VALIDATORS)
         try:
             validate_password(password=password, user=None)
         except DjangoValidationError as e:
-            # e.messages is a list of validator messages
             raise serializers.ValidationError(
-                {"password": e.messages}, code="password_invalid"
+                {"password": e.messages},
+                code="password_invalid",
             )
 
         return attrs
 
 
 class RegisterBrokerSerializer(FileSizeValidationMixin, BaseRegisterSerializer):
-    """
-    Registers a broker user (role=broker) and creates Broker profile.
-    Requires passport upload.
-    """
-
     inn = serializers.FileField(required=True)
-    inn_number = serializers.IntegerField(required=True)
+    inn_number = serializers.CharField(required=True, max_length=12)
     passport = serializers.FileField(required=True)
 
     def validate_inn(self, file):
         return self._validate_file_size(file, "inn")
 
     def validate_inn_number(self, value: str) -> str:
+        value = str(value).strip()
         validate_inn(value)
         return value
 
@@ -197,8 +216,7 @@ class RegisterBrokerSerializer(FileSizeValidationMixin, BaseRegisterSerializer):
 
 
 class BrokerInfoSerializer(serializers.ModelSerializer):
-    inn_url = serializers.SerializerMethodField()
-    passport_url = serializers.SerializerMethodField()
+    inn_number = serializers.CharField(source="user.inn_number", read_only=True)
 
     class Meta:
         model = Broker
@@ -208,33 +226,10 @@ class BrokerInfoSerializer(serializers.ModelSerializer):
             "rejected_at",
             "verified_at",
             "inn_number",
-            "inn_name",
-            "inn_url",
-            "passport_name",
-            "passport_url",
         ]
-
-    def _build_file_url(self, obj, field_name: str):
-        request = self.context.get("request")
-        f = getattr(obj, field_name, None)
-        if not f:
-            return None
-        url = f.url
-        return request.build_absolute_uri(url) if request else url
-
-    def get_inn_url(self, obj):
-        return self._build_file_url(obj, "inn")
-
-    def get_passport_url(self, obj):
-        return self._build_file_url(obj, "passport")
 
 
 class RegisterDeveloperSerializer(BaseRegisterSerializer):
-    """
-    Registers a developer user (role=developer).
-    Email must be verified via OTP beforehand.
-    """
-
     company_name = serializers.CharField(required=True)
 
 
@@ -242,9 +237,6 @@ class DeveloperInfoSerializer(serializers.ModelSerializer):
     class Meta:
         model = Developer
         fields = ["company_name"]
-
-
-# --- Response serializers (nice Swagger) ---
 
 
 class MessageEmailResponseSerializer(serializers.Serializer):
@@ -274,9 +266,6 @@ class RegisterResponseSerializer(TokenObtainPairSerializer):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-
-        # TokenObtainPairSerializer normally adds username/password input fields.
-        # For registration response, we don't want them.
         self.fields.pop(self.username_field, None)
         self.fields.pop("password", None)
 
@@ -292,8 +281,9 @@ class RegisterResponseSerializer(TokenObtainPairSerializer):
 
 
 class MeSerializer(serializers.ModelSerializer):
-    broker = BrokerInfoSerializer()
-    developer = DeveloperInfoSerializer()
+    broker = serializers.SerializerMethodField()
+    developer = serializers.SerializerMethodField()
+    documents = serializers.SerializerMethodField()
 
     class Meta:
         model = User
@@ -309,124 +299,100 @@ class MeSerializer(serializers.ModelSerializer):
             "is_admin",
             "broker",
             "developer",
+            "documents",
         )
 
+    def get_broker(self, obj):
+        broker = getattr(obj, "broker", None)
+        if not broker:
+            return None
+        return BrokerInfoSerializer(broker, context=self.context).data
 
-class BrokerDocumentsUploadSerializer(FileSizeValidationMixin, serializers.Serializer):
-    inn = serializers.FileField(required=False)
-    inn_name = serializers.CharField(required=False, allow_blank=False, max_length=255)
-    passport = serializers.FileField(required=False)
-    passport_name = serializers.CharField(
+    def get_developer(self, obj):
+        developer = getattr(obj, "developer", None)
+        if not developer:
+            return None
+        return DeveloperInfoSerializer(developer, context=self.context).data
+
+    def get_documents(self, obj):
+        if obj.role == User.Roles.ADMIN:
+            return []
+        return UserDocumentSerializer(
+            obj.documents.all(),
+            many=True,
+            context=self.context,
+        ).data
+
+
+class UserDocumentsUploadSerializer(FileSizeValidationMixin, serializers.Serializer):
+    doc_type = serializers.ChoiceField(choices=UserDocument.Types.choices)
+    document = serializers.FileField(required=True)
+    document_name = serializers.CharField(
         required=False, allow_blank=False, max_length=255
     )
 
-    def validate_inn(self, file):
-        return self._validate_file_size(file, "inn")
-
-    def validate_passport(self, file):
-        return self._validate_file_size(file, "passport")
+    def validate_document(self, file):
+        return self._validate_file_size(file, "document")
 
     def validate(self, attrs):
-        request = self.context["request"]
-        user = request.user
+        user = self.context["request"].user
+        doc_type = attrs["doc_type"]
 
-        if not attrs.get("inn") and not attrs.get("passport"):
+        if user.role == User.Roles.ADMIN:
             raise serializers.ValidationError(
-                {"error": _("Загрузите хотя бы один документ: ИНН или паспорт.")}
+                {"error": _("Админ не может загружать документы.")}
             )
 
-        broker = user.broker
-        errors = {}
-
-        if attrs.get("inn") and broker.inn:
-            errors["inn"] = [_("Документ ИНН уже загружен.")]
-
-        if attrs.get("passport") and broker.passport:
-            errors["passport"] = [_("Паспорт уже загружен.")]
-
-        if errors:
-            raise serializers.ValidationError(errors)
+        if (
+            doc_type in {UserDocument.Types.INN, UserDocument.Types.PASSPORT}
+            and user.documents.filter(doc_type=doc_type).exists()
+        ):
+            raise serializers.ValidationError(
+                {"doc_type": _("Документ этого типа уже загружен.")}
+            )
 
         return attrs
 
     def save(self, **kwargs):
-        broker = self.context["request"].user.broker
-        updated_fields = []
+        user = self.context["request"].user
+        document = self.validated_data["document"]
+        document_name = (
+            self.validated_data.get("document_name")
+            or os.path.splitext(document.name)[0]
+        )
 
-        inn = self.validated_data.get("inn")
-        inn_name = self.validated_data.get("inn_name")
-
-        passport = self.validated_data.get("passport")
-        passport_name = self.validated_data.get("passport_name")
-
-        if inn is not None:
-            broker.inn = inn
-            broker.inn_name = inn_name or os.path.splitext(inn.name)[0]
-            updated_fields.extend(["inn", "inn_name"])
-
-        if passport is not None:
-            broker.passport = passport
-            broker.passport_name = passport_name or os.path.splitext(passport.name)[0]
-            updated_fields.extend(["passport", "passport_name"])
-
-        broker.save(update_fields=updated_fields)
-        return broker
+        return UserDocument.objects.create(
+            user=user,
+            doc_type=self.validated_data["doc_type"],
+            document=document,
+            document_name=document_name,
+        )
 
 
-class BrokerDocumentNamesUpdateSerializer(serializers.Serializer):
-    inn_name = serializers.CharField(required=False, allow_blank=False, max_length=255)
-    passport_name = serializers.CharField(
-        required=False,
-        allow_blank=False,
-        max_length=255,
+class UserDocumentNameUpdateSerializer(serializers.Serializer):
+    document_id = serializers.IntegerField(required=True)
+    document_name = serializers.CharField(
+        required=True, allow_blank=False, max_length=255
     )
 
-    NAME_TO_FILE_FIELD = {
-        "inn_name": "inn",
-        "passport_name": "passport",
-    }
-
-    def get_broker(self):
-        user = self.context["request"].user
-        broker = getattr(user, "broker", None)
-        return broker
-
     def validate(self, attrs):
-        if not any(attrs.get(field) for field in self.NAME_TO_FILE_FIELD):
+        user = self.context["request"].user
+
+        if user.role == User.Roles.ADMIN:
             raise serializers.ValidationError(
-                {
-                    "error": _(
-                        "Укажите хотя бы одно поле: "
-                        "название ИНН или название паспорта."
-                    )
-                }
+                {"error": _("Админ не может изменять документы.")}
             )
 
-        broker = self.get_broker()
-        errors = {}
+        try:
+            document = user.documents.get(id=attrs["document_id"])
+        except UserDocument.DoesNotExist:
+            raise serializers.ValidationError({"document_id": _("Документ не найден.")})
 
-        for name_field, file_field in self.NAME_TO_FILE_FIELD.items():
-            if attrs.get(name_field) and not getattr(broker, file_field):
-                errors[name_field] = [
-                    _(f"{file_field.upper()} document is not uploaded yet.")
-                ]
-
-        if errors:
-            raise serializers.ValidationError(errors)
-
+        attrs["document_obj"] = document
         return attrs
 
     def save(self, **kwargs):
-        broker = self.get_broker()
-        updated_fields = []
-
-        for name_field in self.NAME_TO_FILE_FIELD:
-            value = self.validated_data.get(name_field)
-            if value:
-                setattr(broker, name_field, value)
-                updated_fields.append(name_field)
-
-        if updated_fields:
-            broker.save(update_fields=updated_fields)
-
-        return broker
+        document = self.validated_data["document_obj"]
+        document.document_name = self.validated_data["document_name"]
+        document.save(update_fields=["document_name", "updated_at"])
+        return document

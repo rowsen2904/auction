@@ -8,7 +8,7 @@ from django.test import override_settings
 from rest_framework import status
 from rest_framework.test import APITestCase
 
-from apps.users.models import Broker, Developer
+from apps.users.models import Broker, Developer, UserDocument
 from apps.users.utils import (
     get_registration_verified_key,
     get_verification_key,
@@ -20,12 +20,10 @@ BASE = "/api/v1/auth"
 
 
 def _checksum(digits: list[int], weights: list[int]) -> int:
-    # Control digit algorithm: ((sum(d_i * w_i) % 11) % 10)
     return (sum(d * w for d, w in zip(digits, weights)) % 11) % 10
 
 
 def make_inn10(prefix9: str = "770000000") -> str:
-    # Generate a valid 10-digit INN (legal entity) from 9 digits
     if len(prefix9) != 9 or not prefix9.isdigit():
         raise ValueError("prefix9 must be exactly 9 digits")
     digits = list(map(int, prefix9))
@@ -35,11 +33,10 @@ def make_inn10(prefix9: str = "770000000") -> str:
 
 
 def make_inn12(prefix10: str = "7700000000") -> str:
-    # Generate a valid 12-digit INN (individual/IE) from 10 digits
     if len(prefix10) != 10 or not prefix10.isdigit():
         raise ValueError("prefix10 must be exactly 10 digits")
-    digits10 = list(map(int, prefix10))
 
+    digits10 = list(map(int, prefix10))
     weights_11 = [7, 2, 4, 10, 3, 5, 9, 4, 6, 8]
     weights_12 = [3, 7, 2, 4, 10, 3, 5, 9, 4, 6, 8]
 
@@ -109,7 +106,9 @@ class TestAuthOTPFlow(APITestCase):
 
         with patch("apps.users.views.get_client_ip", return_value="1.2.3.4"):
             r1 = self.client.post(
-                f"{BASE}/get-code/", data={"email": email}, format="json"
+                f"{BASE}/get-code/",
+                data={"email": email},
+                format="json",
             )
             self.assertEqual(r1.status_code, status.HTTP_200_OK)
 
@@ -157,7 +156,9 @@ class TestRegistrationFlow(APITestCase):
     def _verify_email_for_registration(self, email: str):
         with patch("apps.users.views.get_client_ip", return_value="1.2.3.4"):
             r1 = self.client.post(
-                f"{BASE}/get-code/", data={"email": email}, format="json"
+                f"{BASE}/get-code/",
+                data={"email": email},
+                format="json",
             )
             self.assertEqual(r1.status_code, status.HTTP_200_OK)
 
@@ -232,22 +233,23 @@ class TestRegistrationFlow(APITestCase):
         self.assertEqual(resp.data["message"], "Registration successful.")
         self.assertIn("user", resp.data)
         self.assertEqual(resp.data["user"]["email"], email)
-        self.assertEqual(resp.data["user"]["role"], "developer")
+        self.assertEqual(resp.data["user"]["role"], User.Roles.DEVELOPER)
 
-        # Developer info embedded in user
         self.assertIsNotNone(resp.data["user"]["developer"])
-        self.assertEqual(resp.data["user"]["developer"]["company_name"], company_name)
-
-        # Broker should be null for developer
+        self.assertEqual(
+            resp.data["user"]["developer"]["company_name"],
+            company_name,
+        )
         self.assertIsNone(resp.data["user"]["broker"])
+        self.assertIn("documents", resp.data["user"])
+        self.assertEqual(resp.data["user"]["documents"], [])
 
-        # Verified flag cleared after registration
         self.assertFalse(cache.get(get_registration_verified_key(email)))
 
-        # DB checks
         self.assertTrue(User.objects.filter(email=email).exists())
         user = User.objects.get(email=email)
         self.assertTrue(Developer.objects.filter(user=user).exists())
+        self.assertEqual(user.documents.count(), 0)
 
     def test_register_broker_requires_file(self):
         email = "broker1@example.com"
@@ -264,17 +266,13 @@ class TestRegistrationFlow(APITestCase):
             format="multipart",
         )
         self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
-
-        # All required broker fields should be reported
         self.assertIn("inn", resp.data)
         self.assertIn("inn_number", resp.data)
         self.assertIn("passport", resp.data)
 
-    def test_register_broker_success_creates_broker_profile(self):
+    def test_register_broker_success_creates_broker_profile_and_documents(self):
         email = "broker2@example.com"
         self._verify_email_for_registration(email)
-
-        # Use a valid 12-digit INN (no leading zeros)
         inn_number = make_inn12("7721581040")
 
         with tempfile.TemporaryDirectory() as tmp_media:
@@ -310,33 +308,54 @@ class TestRegistrationFlow(APITestCase):
         self.assertIn("access", resp.data)
         self.assertIn("user", resp.data)
         self.assertEqual(resp.data["user"]["email"], email)
-        self.assertEqual(resp.data["user"]["role"], "broker")
+        self.assertEqual(resp.data["user"]["role"], User.Roles.BROKER)
 
-        # Broker info embedded in user
         self.assertIsNotNone(resp.data["user"]["broker"])
         self.assertEqual(resp.data["user"]["broker"]["is_verified"], False)
-        self.assertEqual(resp.data["user"]["broker"]["verification_status"], "pending")
+        self.assertEqual(
+            resp.data["user"]["broker"]["verification_status"],
+            Broker.VerificationStatuses.PENDING,
+        )
         self.assertEqual(resp.data["user"]["broker"]["inn_number"], inn_number)
-
-        # Developer should be null for broker
         self.assertIsNone(resp.data["user"]["developer"])
 
-        # DB checks
+        self.assertIn("documents", resp.data["user"])
+        self.assertEqual(len(resp.data["user"]["documents"]), 2)
+        self.assertSetEqual(
+            {doc["doc_type"] for doc in resp.data["user"]["documents"]},
+            {UserDocument.Types.INN, UserDocument.Types.PASSPORT},
+        )
+
         user = User.objects.get(email=email)
         broker = Broker.objects.get(user=user)
+
         self.assertFalse(broker.is_verified)
         self.assertEqual(
-            broker.verification_status, Broker.VerificationStatuses.PENDING
+            broker.verification_status,
+            Broker.VerificationStatuses.PENDING,
         )
-        self.assertEqual(broker.inn_number, inn_number)
-        self.assertTrue(broker.passport.name)
-        self.assertTrue(broker.inn.name)
 
-        # Verified flag cleared after registration
+        self.assertEqual(user.inn_number, inn_number)
+        self.assertEqual(
+            user.documents.filter(doc_type=UserDocument.Types.INN).count(),
+            1,
+        )
+        self.assertEqual(
+            user.documents.filter(doc_type=UserDocument.Types.PASSPORT).count(),
+            1,
+        )
+
+        inn_doc = user.documents.get(doc_type=UserDocument.Types.INN)
+        passport_doc = user.documents.get(doc_type=UserDocument.Types.PASSPORT)
+
+        self.assertTrue(bool(inn_doc.document.name))
+        self.assertTrue(bool(passport_doc.document.name))
+        self.assertEqual(inn_doc.document_name, "inn")
+        self.assertEqual(passport_doc.document_name, "passport")
+
         self.assertFalse(cache.get(get_registration_verified_key(email)))
 
     def test_register_broker_invalid_inn_returns_400(self):
-        # Should return 400 when INN checksum is invalid
         email = "broker_bad_inn@example.com"
         self._verify_email_for_registration(email)
 
@@ -353,7 +372,6 @@ class TestRegistrationFlow(APITestCase):
                     content_type="application/pdf",
                 )
 
-                # Take a valid INN12 and break the last control digit
                 valid_inn = make_inn12("7721581040")
                 invalid_inn = valid_inn[:-1] + ("0" if valid_inn[-1] != "0" else "1")
 
@@ -391,9 +409,13 @@ class TestLoginAndRefresh(APITestCase):
     def test_login_success_returns_tokens_and_user(self):
         email = "login@example.com"
         password = "StrongPass123!"
+
         user = User.objects.create_user(
-            email=email, password=password, role=User.Roles.DEVELOPER
+            email=email,
+            password=password,
+            role=User.Roles.DEVELOPER,
         )
+        Developer.objects.create(user=user, company_name="Acme Inc")
 
         resp = self.client.post(
             f"{BASE}/login/",
@@ -405,12 +427,20 @@ class TestLoginAndRefresh(APITestCase):
         self.assertIn("access", resp.data)
         self.assertEqual(resp.data["user"]["id"], user.id)
         self.assertEqual(resp.data["user"]["email"], email)
+        self.assertEqual(resp.data["user"]["role"], User.Roles.DEVELOPER)
+        self.assertIn("documents", resp.data["user"])
+        self.assertEqual(resp.data["user"]["documents"], [])
+        self.assertIsNotNone(resp.data["user"]["developer"])
+        self.assertIsNone(resp.data["user"]["broker"])
 
     def test_login_invalid_password(self):
         email = "login2@example.com"
-        User.objects.create_user(
-            email=email, password="StrongPass123!", role=User.Roles.DEVELOPER
+        user = User.objects.create_user(
+            email=email,
+            password="StrongPass123!",
+            role=User.Roles.DEVELOPER,
         )
+        Developer.objects.create(user=user, company_name="Acme Inc")
 
         resp = self.client.post(
             f"{BASE}/login/",
@@ -422,9 +452,12 @@ class TestLoginAndRefresh(APITestCase):
     def test_refresh_returns_new_access(self):
         email = "refresh@example.com"
         password = "StrongPass123!"
-        User.objects.create_user(
-            email=email, password=password, role=User.Roles.DEVELOPER
+        user = User.objects.create_user(
+            email=email,
+            password=password,
+            role=User.Roles.DEVELOPER,
         )
+        Developer.objects.create(user=user, company_name="Acme Inc")
 
         login = self.client.post(
             f"{BASE}/login/",

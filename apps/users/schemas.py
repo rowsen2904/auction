@@ -39,8 +39,8 @@ REGISTER_DEVELOPER_DOC = (
     "Registers a new user with role **developer**.\n\n"
     "Requirements:\n"
     "- Email must be verified via OTP beforehand.\n"
-    "- Admin role cannot be selected.\n"
-    "- `company_name` is required."
+    "- `company_name` is required.\n"
+    "- Documents belong to the user model, not to developer."
 )
 
 REGISTER_BROKER_DOC = (
@@ -49,6 +49,7 @@ REGISTER_BROKER_DOC = (
     "- Email must be verified via OTP beforehand.\n"
     "- Must provide `inn_number`.\n"
     "- Must upload `inn` and `passport`.\n"
+    "- Uploaded files are stored as `UserDocument` records attached to the user.\n"
     "- Broker is created with `is_verified=false` and `verification_status=pending`."
 )
 
@@ -74,39 +75,12 @@ get_verification_code_schema = extend_schema(
         200: OpenApiResponse(
             response=MessageEmailResponseSerializer,
             description="Verification code sent.",
-            examples=[
-                OpenApiExample(
-                    "Success",
-                    value={
-                        "message": "Verification code sent to your email.",
-                        "email": "user@example.com",
-                    },
-                )
-            ],
         ),
         409: OpenApiResponse(
-            response=ErrorResponseSerializer,
-            description="User already exists.",
-            examples=[
-                OpenApiExample(
-                    "User already exists",
-                    value={"error": "User already exists."},
-                )
-            ],
+            response=ErrorResponseSerializer, description="User already exists."
         ),
         429: OpenApiResponse(
-            response=RateLimitResponseSerializer,
-            description="Rate limit exceeded.",
-            examples=[
-                OpenApiExample(
-                    "Rate limited",
-                    value={
-                        "error": "Please wait 42 seconds before requesting another code.",
-                        "remaining_time": 42,
-                        "code": "rate_limit_exceeded",
-                    },
-                )
-            ],
+            response=RateLimitResponseSerializer, description="Rate limit exceeded."
         ),
     },
     tags=["Auth"],
@@ -118,27 +92,9 @@ verify_email_schema = extend_schema(
     request=VerifyEmailSerializer,
     responses={
         200: OpenApiResponse(
-            response=MessageEmailResponseSerializer,
-            description="Email code verified.",
-            examples=[
-                OpenApiExample(
-                    "Verified",
-                    value={
-                        "message": "Email verified successfully.",
-                        "email": "user@example.com",
-                    },
-                )
-            ],
+            response=MessageEmailResponseSerializer, description="Email code verified."
         ),
-        400: OpenApiResponse(
-            description="Invalid or expired code.",
-            examples=[
-                OpenApiExample(
-                    "Invalid code",
-                    value={"code": ["Invalid or expired code"]},
-                )
-            ],
-        ),
+        400: OpenApiResponse(description="Invalid or expired code."),
     },
     tags=["Auth"],
 )
@@ -151,16 +107,9 @@ resend_code_schema = extend_schema(
         200: OpenApiResponse(
             response=MessageResponseSerializer,
             description="New verification code sent.",
-            examples=[
-                OpenApiExample(
-                    "Resent",
-                    value={"message": "New code sent to your email."},
-                )
-            ],
         ),
         429: OpenApiResponse(
-            response=RateLimitResponseSerializer,
-            description="Rate limit exceeded.",
+            response=RateLimitResponseSerializer, description="Rate limit exceeded."
         ),
     },
     tags=["Auth"],
@@ -191,18 +140,17 @@ register_developer_schema = extend_schema(
                             "developer": {
                                 "company_name": "Acme Inc",
                             },
+                            "documents": [],
                         },
                     },
                 )
             ],
         ),
         400: OpenApiResponse(
-            response=ErrorResponseSerializer,
-            description="Validation error (e.g., email not verified).",
+            response=ErrorResponseSerializer, description="Validation error."
         ),
         409: OpenApiResponse(
-            response=ErrorResponseSerializer,
-            description="User already exists.",
+            response=ErrorResponseSerializer, description="User already exists."
         ),
     },
     tags=["Auth"],
@@ -235,22 +183,40 @@ register_broker_schema = extend_schema(
                                 "rejected_at": None,
                                 "verified_at": None,
                                 "inn_number": "772158104012",
-                                "inn_url": "http://host:7676/media/...",
-                                "passport_url": "http://host:7676/media/...",
                             },
                             "developer": None,
+                            "documents": [
+                                {
+                                    "id": 10,
+                                    "doc_type": "inn",
+                                    "document_name": "inn_file",
+                                    "url": "http://host:8000/media/users/2/documents/abc.pdf",
+                                    "filename": "abc.pdf",
+                                    "extension": ".pdf",
+                                    "created_at": "2026-03-26T10:00:00Z",
+                                    "updated_at": "2026-03-26T10:00:00Z",
+                                },
+                                {
+                                    "id": 11,
+                                    "doc_type": "passport",
+                                    "document_name": "passport_file",
+                                    "url": "http://host:8000/media/users/2/documents/def.pdf",
+                                    "filename": "def.pdf",
+                                    "extension": ".pdf",
+                                    "created_at": "2026-03-26T10:00:00Z",
+                                    "updated_at": "2026-03-26T10:00:00Z",
+                                },
+                            ],
                         },
                     },
                 )
             ],
         ),
         400: OpenApiResponse(
-            response=ErrorResponseSerializer,
-            description="Validation error (e.g., email not verified, missing files, invalid INN).",
+            response=ErrorResponseSerializer, description="Validation error."
         ),
         409: OpenApiResponse(
-            response=ErrorResponseSerializer,
-            description="User already exists.",
+            response=ErrorResponseSerializer, description="User already exists."
         ),
     },
     tags=["Auth"],

@@ -5,21 +5,17 @@ from django.contrib.auth.admin import UserAdmin as DjangoUserAdmin
 from django.contrib.auth.forms import ReadOnlyPasswordHashField
 from django.utils.translation import gettext_lazy as _
 
-from .models import Broker, Developer
+from .models import Broker, Developer, UserDocument
 
 User = get_user_model()
 
+
 # Forms
-
-
 class UserCreationForm(forms.ModelForm):
-    """
-    User creation form for the admin (with password confirmation).
-    """
-
     password1 = forms.CharField(label=_("Password"), widget=forms.PasswordInput)
     password2 = forms.CharField(
-        label=_("Password confirmation"), widget=forms.PasswordInput
+        label=_("Password confirmation"),
+        widget=forms.PasswordInput,
     )
 
     class Meta:
@@ -42,11 +38,6 @@ class UserCreationForm(forms.ModelForm):
 
 
 class UserChangeForm(forms.ModelForm):
-    """
-    User edit form for the admin.
-    The password is shown as a hashed readonly field.
-    """
-
     password = ReadOnlyPasswordHashField(
         label=_("Password"),
         help_text=_(
@@ -62,6 +53,7 @@ class UserChangeForm(forms.ModelForm):
             "first_name",
             "last_name",
             "role",
+            "inn_number",  # убери отсюда, если реально удалишь поле из User
             "is_active",
             "is_staff",
             "is_superuser",
@@ -76,21 +68,33 @@ class BrokerInline(admin.StackedInline):
     extra = 0
     can_delete = True
     fields = (
+        "verification_status",
         "is_verified",
-        "rejected_at",
         "verified_at",
-        "inn_number",
-        "inn",
-        "passport",
+        "rejected_at",
     )
-    readonly_fields = ("verified_at", "rejected_at")
+    readonly_fields = ("is_verified", "verified_at", "rejected_at")
 
 
 class DeveloperInline(admin.StackedInline):
     model = Developer
     extra = 0
     can_delete = True
-    fields = "company_name"
+    fields = ("company_name",)
+
+
+class UserDocumentInline(admin.TabularInline):
+    model = UserDocument
+    extra = 0
+    can_delete = True
+    fields = (
+        "doc_type",
+        "document_name",
+        "document",
+        "created_at",
+        "updated_at",
+    )
+    readonly_fields = ("created_at", "updated_at")
 
 
 # Admins
@@ -110,13 +114,16 @@ class UserAdmin(DjangoUserAdmin):
         "date_joined",
     )
     list_filter = ("role", "is_staff", "is_active", "is_superuser")
-    search_fields = ("email", "first_name", "last_name")
+    search_fields = ("email", "first_name", "last_name", "inn_number")
     ordering = ("email",)
     filter_horizontal = ("groups", "user_permissions")
 
     fieldsets = (
         (None, {"fields": ("email", "password")}),
-        (_("Personal info"), {"fields": ("first_name", "last_name", "role")}),
+        (
+            _("Personal info"),
+            {"fields": ("first_name", "last_name", "role", "inn_number")},
+        ),
         (
             _("Permissions"),
             {
@@ -153,27 +160,32 @@ class UserAdmin(DjangoUserAdmin):
     )
 
     def get_inlines(self, request, obj=None):
-        """
-        Show BrokerInline only:
-        - when editing an existing user,
-        - and the user is a broker (by role or already has a broker profile).
-        """
         if obj is None:
             return []
 
+        inlines = [UserDocumentInline]
+
         role = getattr(obj, "role", None)
-        if role == getattr(User, "Roles").BROKER or hasattr(obj, "broker"):
-            return [BrokerInline]
-        elif role == getattr(User, "Roles").DEVELOPER or hasattr(obj, "developer"):
-            return [Developer]
-        return []
+
+        if role == User.Roles.BROKER or hasattr(obj, "broker"):
+            inlines.insert(0, BrokerInline)
+        elif role == User.Roles.DEVELOPER or hasattr(obj, "developer"):
+            inlines.insert(0, DeveloperInline)
+
+        return inlines
 
 
 @admin.register(Broker)
 class BrokerAdmin(admin.ModelAdmin):
-    list_display = ("user", "is_verified", "rejected_at", "verified_at", "inn_number")
-    list_filter = ("is_verified",)
-    search_fields = ("user__email", "user__first_name", "user__last_name", "inn_number")
+    list_display = (
+        "user",
+        "verification_status",
+        "is_verified",
+        "verified_at",
+        "rejected_at",
+    )
+    list_filter = ("verification_status", "is_verified")
+    search_fields = ("user__email", "user__first_name", "user__last_name")
     autocomplete_fields = ("user",)
 
 
@@ -187,3 +199,33 @@ class DeveloperAdmin(admin.ModelAdmin):
         "company_name",
     )
     autocomplete_fields = ("user",)
+
+
+@admin.register(UserDocument)
+class UserDocumentAdmin(admin.ModelAdmin):
+    list_display = (
+        "id",
+        "user",
+        "doc_type",
+        "document_name",
+        "created_at",
+    )
+    list_filter = ("doc_type", "created_at")
+    search_fields = (
+        "user__email",
+        "user__first_name",
+        "user__last_name",
+        "document_name",
+    )
+    autocomplete_fields = ("user",)
+    readonly_fields = ("created_at", "updated_at", "filename", "extension")
+    fields = (
+        "user",
+        "doc_type",
+        "document_name",
+        "document",
+        "filename",
+        "extension",
+        "created_at",
+        "updated_at",
+    )

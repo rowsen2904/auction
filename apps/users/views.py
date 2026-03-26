@@ -1,4 +1,3 @@
-from auctions.permissions import IsBroker
 from django.contrib.auth import get_user_model
 from django.db import IntegrityError, transaction
 from django.utils.translation import gettext_lazy as _
@@ -12,7 +11,7 @@ from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
 from helpers.utils import get_client_ip
 
-from .models import Broker, Developer
+from .models import Broker, Developer, UserDocument
 from .schemas import (
     get_verification_code_schema,
     login_schema,
@@ -23,15 +22,15 @@ from .schemas import (
     verify_email_schema,
 )
 from .serializers import (
-    BrokerDocumentNamesUpdateSerializer,
-    BrokerDocumentsUploadSerializer,
-    BrokerInfoSerializer,
     EmailSerializer,
     LoginSerializer,
     MeSerializer,
     RegisterBrokerSerializer,
     RegisterDeveloperSerializer,
     RegisterResponseSerializer,
+    UserDocumentNameUpdateSerializer,
+    UserDocumentSerializer,
+    UserDocumentsUploadSerializer,
     VerifyEmailSerializer,
 )
 from .utils import (
@@ -110,8 +109,6 @@ class VerifyEmailView(generics.GenericAPIView):
         serializer.is_valid(raise_exception=True)
 
         email = serializer.validated_data["email"]
-
-        # Allow registration for a limited time window after OTP verification
         mark_email_verified_for_registration(email)
 
         return Response(
@@ -146,7 +143,8 @@ class ResendCodeView(generics.GenericAPIView):
         try:
             send_verification_email_to(email, client_ip)
             return Response(
-                {"message": "New code sent to your email."}, status=status.HTTP_200_OK
+                {"message": "New code sent to your email."},
+                status=status.HTTP_200_OK,
             )
         except Exception:
             return Response(
@@ -181,22 +179,17 @@ class RegisterDeveloperView(generics.GenericAPIView):
                     role=User.Roles.DEVELOPER,
                     is_active=True,
                 )
-
                 developer = Developer.objects.create(
-                    user=user, company_name=company_name
+                    user=user,
+                    company_name=company_name,
                 )
-
-                # Cache the relation on the user instance to avoid an extra DB query in serializer
                 user.developer = developer
 
-            # One-time use of verified flag
             clear_email_verified_for_registration(email)
-
             payload = RegisterResponseSerializer.build_payload(user)
             return Response(payload, status=status.HTTP_201_CREATED)
 
         except IntegrityError:
-            # Handles race condition if two requests try to create the same email concurrently
             return Response(
                 {"error": _("User already exists.")},
                 status=status.HTTP_409_CONFLICT,
@@ -229,29 +222,33 @@ class RegisterBrokerView(generics.GenericAPIView):
                     first_name=first_name,
                     last_name=last_name,
                     role=User.Roles.BROKER,
+                    inn_number=inn_number,
                     is_active=True,
                 )
 
-                broker = Broker.objects.create(
-                    user=user,
-                    inn_number=inn_number,
-                    inn=inn,
-                    passport=passport,
-                )
-
-                # Cache the relation on the user instance to avoid an extra DB query in serializer
+                broker = Broker.objects.create(user=user)
                 user.broker = broker
 
-            # One-time use of verified flag
-            clear_email_verified_for_registration(email)
+                UserDocument.objects.create(
+                    user=user,
+                    doc_type=UserDocument.Types.INN,
+                    document=inn,
+                    document_name=inn.name.rsplit(".", 1)[0],
+                )
+                UserDocument.objects.create(
+                    user=user,
+                    doc_type=UserDocument.Types.PASSPORT,
+                    document=passport,
+                    document_name=passport.name.rsplit(".", 1)[0],
+                )
 
+            clear_email_verified_for_registration(email)
             payload = RegisterResponseSerializer.build_payload(user)
             return Response(payload, status=status.HTTP_201_CREATED)
 
-        except IntegrityError as e:
-            print(e)
+        except IntegrityError:
             return Response(
-                {"error": f"{e}"},
+                {"error": _("User already exists.")},
                 status=status.HTTP_409_CONFLICT,
             )
 
@@ -267,62 +264,67 @@ class MeView(APIView):
     def get(self, request, *args, **kwargs):
         user = request.user
 
-        # If user got token earlier but later was deactivated
         if not getattr(user, "is_active", True):
             return Response(
-                {"detail": "User is inactive"}, status=status.HTTP_403_FORBIDDEN
+                {"detail": "User is inactive"},
+                status=status.HTTP_403_FORBIDDEN,
             )
 
-        return Response(MeSerializer(user).data, status=status.HTTP_200_OK)
+        return Response(
+            MeSerializer(user, context={"request": request}).data,
+            status=status.HTTP_200_OK,
+        )
 
 
-class BrokerDocumentsUploadView(generics.GenericAPIView):
-    permission_classes = [IsBroker]
-    serializer_class = BrokerDocumentsUploadSerializer
+class UserDocumentsUploadView(generics.GenericAPIView):
+    permission_classes = [IsAuthenticated]
+    serializer_class = UserDocumentsUploadSerializer
     parser_classes = [MultiPartParser, FormParser]
 
     @extend_schema(
-        summary="Upload broker documents",
+        summary="Upload user document",
         tags=["Auth"],
-        request=BrokerDocumentsUploadSerializer,
-        responses={200: BrokerInfoSerializer},
+        request=UserDocumentsUploadSerializer,
+        responses={200: UserDocumentSerializer},
     )
     def post(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        broker = serializer.save()
+        document = serializer.save()
 
         return Response(
             {
-                "message": _("Документы успешно загружены."),
-                "broker": BrokerInfoSerializer(
-                    broker, context={"request": request}
+                "message": _("Документ успешно загружен."),
+                "document": UserDocumentSerializer(
+                    document,
+                    context={"request": request},
                 ).data,
             },
             status=status.HTTP_200_OK,
         )
 
 
-class BrokerDocumentNamesUpdateView(generics.GenericAPIView):
-    permission_classes = [IsBroker]
-    serializer_class = BrokerDocumentNamesUpdateSerializer
+class UserDocumentNameUpdateView(generics.GenericAPIView):
+    permission_classes = [IsAuthenticated]
+    serializer_class = UserDocumentNameUpdateSerializer
 
     @extend_schema(
-        summary="Update broker document names",
+        summary="Update user document name",
         tags=["Auth"],
-        request=BrokerDocumentNamesUpdateSerializer,
-        responses={200: BrokerInfoSerializer},
+        request=UserDocumentNameUpdateSerializer,
+        responses={200: UserDocumentSerializer},
     )
     def patch(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        broker = serializer.save()
+        document = serializer.save()
 
         return Response(
             {
-                "message": _("Названия документов успешно обновлены."),
-                "broker": BrokerInfoSerializer(
-                    broker, context={"request": request}
+                "message": _("Название документа успешно обновлено."),
+                "document": UserDocumentSerializer(
+                    document,
+                    context={"request": request},
                 ).data,
             },
             status=status.HTTP_200_OK,

@@ -6,27 +6,30 @@ from django.contrib.auth.models import (
     BaseUserManager,
     PermissionsMixin,
 )
+from django.core.exceptions import ValidationError
 from django.db import models
+from django.db.models import Q
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
 from .validators import validate_inn
 
 
-def broker_passport_folder(instance, filename):
+def user_document_folder(instance, filename):
     _, ext = os.path.splitext(filename)
     ext = ext.lower()
 
     user_id = instance.user_id or "tmp"
-    return f"brokers/{user_id}/passports/{uuid4().hex}{ext}"
+    return f"users/{user_id}/documents/{uuid4().hex}{ext}"
 
 
-def broker_inn_folder(instance, filename):
-    _, ext = os.path.splitext(filename)
-    ext = ext.lower()
+# TODO must remove
+def broker_passport_folder():
+    pass
 
-    user_id = instance.user_id or "tmp"
-    return f"brokers/{user_id}/inns/{uuid4().hex}{ext}"
+
+def broker_inn_folder():
+    pass
 
 
 class UserManager(BaseUserManager):
@@ -62,6 +65,21 @@ class UserManager(BaseUserManager):
         return self._create_user(email, password, **extra_fields)
 
 
+class UserDocumentQuerySet(models.QuerySet):
+    def for_user(self, user):
+        user_id = getattr(user, "pk", user)
+        return self.filter(user_id=user_id)
+
+    def inn(self):
+        return self.filter(doc_type=UserDocument.Types.INN)
+
+    def passports(self):
+        return self.filter(doc_type=UserDocument.Types.PASSPORT)
+
+    def others(self):
+        return self.filter(doc_type=UserDocument.Types.OTHERS)
+
+
 class User(AbstractBaseUser, PermissionsMixin):
     class Roles(models.TextChoices):
         DEVELOPER = "developer", _("Developer")
@@ -79,6 +97,9 @@ class User(AbstractBaseUser, PermissionsMixin):
         choices=Roles.choices,
         default=Roles.DEVELOPER,
         db_index=True,
+    )
+    inn_number = models.CharField(
+        max_length=12, validators=[validate_inn], blank=True, null=True, unique=True
     )
 
     is_staff = models.BooleanField(default=False)
@@ -128,11 +149,6 @@ class Broker(models.Model):
     is_verified = models.BooleanField(default=False, db_index=True)
     verified_at = models.DateTimeField(null=True, blank=True)
     rejected_at = models.DateTimeField(null=True, blank=True)
-    inn = models.FileField(upload_to=broker_inn_folder, null=True, blank=True)
-    inn_name = models.CharField(max_length=255, blank=True, default="")
-    inn_number = models.CharField(max_length=12, validators=[validate_inn], unique=True)
-    passport = models.FileField(upload_to=broker_passport_folder, null=True, blank=True)
-    passport_name = models.CharField(max_length=255, blank=True, default="")
     verification_status = models.CharField(
         _("verification status"),
         max_length=20,
@@ -211,3 +227,73 @@ class Developer(models.Model):
             self.user.role = User.Roles.DEVELOPER
             self.user.save(update_fields=["role"])
         super().save(*args, **kwargs)
+
+
+class UserDocument(models.Model):
+    class Types(models.TextChoices):
+        INN = "inn", _("ИНН")
+        PASSPORT = "passport", _("Паспорт")
+        OTHERS = "others", _("Другие")
+
+    user = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name="documents",
+    )
+    document = models.FileField(upload_to=user_document_folder)
+    document_name = models.CharField(
+        max_length=255,
+        blank=True,
+    )
+    doc_type = models.CharField(
+        _("тип документа"),
+        max_length=15,
+        choices=Types.choices,
+    )
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    objects = UserDocumentQuerySet.as_manager()
+
+    class Meta:
+        verbose_name = _("документ пользователя")
+        verbose_name_plural = _("документы пользователя")
+        indexes = [
+            models.Index(fields=["user", "doc_type"]),
+            models.Index(fields=["user", "created_at"]),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["user", "doc_type"],
+                condition=Q(doc_type__in=["inn", "passport"]),
+                name="uniq_user_single_primary_doc_type",
+            )
+        ]
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return self.document_name or self.filename
+
+    @property
+    def filename(self):
+        return os.path.basename(self.document.name) if self.document else ""
+
+    @property
+    def extension(self):
+        return os.path.splitext(self.filename)[1].lower()
+
+    def clean(self):
+        if self.user.role == User.Roles.ADMIN:
+            raise ValidationError({"user": _("Админ не может загружать документы.")})
+
+    def save(self, *args, **kwargs):
+        if not self.document_name and self.document:
+            self.document_name = os.path.basename(self.document.name)
+        super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        storage = self.document.storage if self.document else None
+        name = self.document.name if self.document else None
+        super().delete(*args, **kwargs)
+        if storage and name:
+            storage.delete(name)

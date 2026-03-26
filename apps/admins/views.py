@@ -1,4 +1,5 @@
 from django.contrib.auth import get_user_model
+from django.db.models import Prefetch
 from django.shortcuts import get_object_or_404
 from django.utils.translation import gettext_lazy as _
 from properties.filters import PendingPropertyFilter
@@ -9,6 +10,7 @@ from rest_framework.permissions import IsAdminUser
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from apps.users.models import UserDocument
 from apps.users.serializers import TokenUserSerializer
 
 from .filters import UserFilter
@@ -34,7 +36,6 @@ class UserListView(generics.ListAPIView):
     pagination_class = UserListPagination
     permission_classes = [IsAdminUser]
     serializer_class = TokenUserSerializer
-
     filterset_class = UserFilter
     ordering_fields = ["date_joined", "email", "role", "is_active"]
     ordering = ["-date_joined"]
@@ -43,24 +44,38 @@ class UserListView(generics.ListAPIView):
         return (
             User.objects.all()
             .select_related("broker", "developer")
+            .prefetch_related(
+                Prefetch(
+                    "documents",
+                    queryset=UserDocument.objects.only(
+                        "id",
+                        "user_id",
+                        "doc_type",
+                        "document",
+                        "document_name",
+                        "created_at",
+                        "updated_at",
+                    ).order_by("-created_at"),
+                )
+            )
             .only(
                 "id",
                 "email",
                 "first_name",
                 "last_name",
                 "role",
+                "inn_number",
                 "is_active",
                 "is_staff",
                 "date_joined",
-                # broker safe fields
+                # broker
                 "broker__id",
                 "broker__user_id",
                 "broker__is_verified",
                 "broker__verification_status",
                 "broker__verified_at",
                 "broker__rejected_at",
-                "broker__inn_number",
-                # developer safe fields
+                # developer
                 "developer__id",
                 "developer__user_id",
                 "developer__company_name",
@@ -69,18 +84,21 @@ class UserListView(generics.ListAPIView):
 
     @user_list_schema
     def get(self, request, *args, **kwargs):
-        print(request.user)
         return super().get(request, *args, **kwargs)
-
-
-class BlockUserView(generics.GenericAPIView):
-    permission_classes = [IsAdminUser]
 
 
 class BrokerVerificationView(generics.GenericAPIView):
     queryset = (
         User.objects.select_related("broker")
-        .only("id", "role", "broker__id", "broker__verification_status")
+        .only(
+            "id",
+            "role",
+            "broker__id",
+            "broker__verification_status",
+            "broker__is_verified",
+            "broker__verified_at",
+            "broker__rejected_at",
+        )
         .filter(role=User.Roles.BROKER)
     )
     serializer_class = BrokerVerificationSerializer
@@ -98,17 +116,16 @@ class BrokerVerificationView(generics.GenericAPIView):
 
         broker = getattr(user, "broker", None)
         if broker is None:
-            # Broker profile missing even though role is broker
             raise ValidationError({"id": _("Broker profile not found for this user.")})
 
         if action == "accept":
             broker.verify_broker()
-            msg = _("Broker has been successfully verified.")
+            message = _("Broker has been successfully verified.")
         else:
             broker.set_as_rejected()
-            msg = _("Broker has been rejected.")
+            message = _("Broker has been rejected.")
 
-        return Response({"message": msg}, status=status.HTTP_200_OK)
+        return Response({"message": message}, status=status.HTTP_200_OK)
 
 
 class UserActiveUpdateView(generics.GenericAPIView):
@@ -119,13 +136,18 @@ class UserActiveUpdateView(generics.GenericAPIView):
     def patch(self, request, pk: int, *args, **kwargs):
         serializer = self.get_serializer(data=request.data, partial=False)
         serializer.is_valid(raise_exception=True)
+
         new_is_active: bool = serializer.validated_data["is_active"]
 
-        # Prevent admin from disabling themselves (optional, but usually needed)
         if request.user.id == pk and new_is_active is False:
-            raise ValidationError({"detail": "You cannot deactivate your own account."})
+            raise ValidationError(
+                {"detail": _("You cannot deactivate your own account.")}
+            )
 
-        user = get_object_or_404(User.objects.only("id", "is_active"), pk=pk)
+        user = get_object_or_404(
+            User.objects.only("id", "is_active"),
+            pk=pk,
+        )
 
         if user.is_active != new_is_active:
             user.is_active = new_is_active
@@ -135,13 +157,12 @@ class UserActiveUpdateView(generics.GenericAPIView):
             {
                 "id": user.id,
                 "is_active": user.is_active,
-                "message": "User updated.",
+                "message": _("User updated."),
             },
             status=status.HTTP_200_OK,
         )
 
 
-# TODO: Must to do general list of properties with filtering
 class PendingPropertiesListView(generics.ListAPIView):
     permission_classes = [IsAdminUser]
     serializer_class = PendingPropertySerializer
@@ -167,7 +188,9 @@ class ApprovePropertyView(APIView):
     def patch(self, request, pk: int):
         prop = Property.objects.only("id", "moderation_status").filter(pk=pk).first()
         if not prop:
-            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+            return Response(
+                {"detail": _("Not found.")}, status=status.HTTP_404_NOT_FOUND
+            )
 
         if prop.moderation_status == Property.ModerationStatuses.PENDING:
             prop.moderation_status = Property.ModerationStatuses.APPROVED
@@ -178,7 +201,10 @@ class ApprovePropertyView(APIView):
             )
 
         return Response(
-            {"message": _(f"Property has already {prop.moderation_status}.")},
+            {
+                "message": _("Property has already %(status)s.")
+                % {"status": prop.moderation_status}
+            },
             status=status.HTTP_200_OK,
         )
 
@@ -188,11 +214,11 @@ class RejectPropertyView(APIView):
 
     @reject_property_schema
     def patch(self, request, pk: int):
-        prop: Property = (
-            Property.objects.only("id", "moderation_status").filter(pk=pk).first()
-        )
+        prop = Property.objects.only("id", "moderation_status").filter(pk=pk).first()
         if not prop:
-            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+            return Response(
+                {"detail": _("Not found.")}, status=status.HTTP_404_NOT_FOUND
+            )
 
         if prop.moderation_status == Property.ModerationStatuses.PENDING:
             prop.moderation_status = Property.ModerationStatuses.REJECTED
@@ -203,6 +229,9 @@ class RejectPropertyView(APIView):
             )
 
         return Response(
-            {"message": _(f"Property has already {prop.moderation_status}.")},
+            {
+                "message": _("Property has already %(status)s.")
+                % {"status": prop.moderation_status}
+            },
             status=status.HTTP_200_OK,
         )

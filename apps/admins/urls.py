@@ -10,21 +10,33 @@ from .views import (
 )
 
 urlpatterns = [
-    # User
+    # Users
     path("users/", UserListView.as_view(), name="user-list"),
     path(
         "users/<int:pk>/block/",
         UserActiveUpdateView.as_view(),
         name="admin-user-block",
     ),
-    # Broker
+    # Brokers
     path(
         "broker/verify/",
         BrokerVerificationView.as_view(),
         name="broker-verification",
     ),
-    # Property
-    path("properties/pending/", PendingPropertiesListView.as_view()),
-    path("properties/<int:pk>/approve/", ApprovePropertyView.as_view()),
-    path("properties/<int:pk>/reject/", RejectPropertyView.as_view()),
+    # Properties
+    path(
+        "properties/pending/",
+        PendingPropertiesListView.as_view(),
+        name="pending-properties-list",
+    ),
+    path(
+        "properties/<int:pk>/approve/",
+        ApprovePropertyView.as_view(),
+        name="property-approve",
+    ),
+    path(
+        "properties/<int:pk>/reject/",
+        RejectPropertyView.as_view(),
+        name="property-reject",
+    ),
 ]
