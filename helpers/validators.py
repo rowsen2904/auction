@@ -3,7 +3,7 @@ from rest_framework import serializers
 
 
 class FileSizeValidationMixin:
-    MAX_FILE_SIZE = 5 * 1024 * 1024  # 5MB
+    MAX_FILE_SIZE = 15 * 1024 * 1024  # 15MB
 
     def _validate_file_size(self, file, field_name: str):
         if not file:
