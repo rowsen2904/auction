@@ -309,8 +309,30 @@ class PropertyImageUpdateView(generics.GenericAPIView):
     @property_image_delete_schema
     def delete(self, request, *args, **kwargs):
         prop = self.get_property()
-        image = self.get_image(prop)
-        image.delete()
+
+        with transaction.atomic():
+            image = get_object_or_404(
+                PropertyImage.objects.select_for_update(),
+                id=self.kwargs["image_id"],
+                property=prop,
+            )
+
+            was_primary = image.is_primary
+
+            image.delete()
+
+            if was_primary:
+                next_image = (
+                    PropertyImage.objects.select_for_update()
+                    .filter(property=prop)
+                    .order_by("sort_order", "id")
+                    .first()
+                )
+
+                if next_image:
+                    next_image.is_primary = True
+                    next_image.save(update_fields=["is_primary"])
+
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 

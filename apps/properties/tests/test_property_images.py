@@ -363,3 +363,57 @@ class PropertyImageAPITests(BasePropertyTestCase):
         self.client.force_authenticate(user=self.dev1)
         resp = self.client.delete(f"{BASE}{prop.id}/images/999999/")
         self.assertEqual(resp.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_delete_primary_image_reassigns_another_image_as_primary(self):
+        prop = self._create_property(self.dev1, address="Delete Primary Reassign")
+
+        img1 = PropertyImage.objects.create(
+            property=prop,
+            external_url="https://cdn.example.com/delete-primary-1.jpg",
+            sort_order=0,
+            is_primary=True,
+        )
+        img2 = PropertyImage.objects.create(
+            property=prop,
+            external_url="https://cdn.example.com/delete-primary-2.jpg",
+            sort_order=1,
+            is_primary=False,
+        )
+        img3 = PropertyImage.objects.create(
+            property=prop,
+            external_url="https://cdn.example.com/delete-primary-3.jpg",
+            sort_order=2,
+            is_primary=False,
+        )
+
+        self.client.force_authenticate(user=self.dev1)
+        resp = self.client.delete(f"{BASE}{prop.id}/images/{img1.id}/")
+
+        self.assertEqual(resp.status_code, status.HTTP_204_NO_CONTENT)
+        self.assertFalse(PropertyImage.objects.filter(id=img1.id).exists())
+
+        img2.refresh_from_db()
+        img3.refresh_from_db()
+
+        self.assertTrue(img2.is_primary)
+        self.assertFalse(img3.is_primary)
+
+    def test_delete_last_primary_image_leaves_empty_list(self):
+        prop = self._create_property(self.dev1, address="Delete Last Primary")
+
+        img = PropertyImage.objects.create(
+            property=prop,
+            external_url="https://cdn.example.com/delete-last-primary.jpg",
+            sort_order=0,
+            is_primary=True,
+        )
+
+        self.client.force_authenticate(user=self.dev1)
+        resp = self.client.delete(f"{BASE}{prop.id}/images/{img.id}/")
+
+        self.assertEqual(resp.status_code, status.HTTP_204_NO_CONTENT)
+        self.assertFalse(PropertyImage.objects.filter(property=prop).exists())
+
+        list_resp = self.client.get(f"{BASE}{prop.id}/images/", format="json")
+        self.assertEqual(list_resp.status_code, status.HTTP_200_OK)
+        self.assertEqual(list_resp.data, [])
