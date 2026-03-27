@@ -25,9 +25,11 @@ from .serializers import (
     EmailSerializer,
     LoginSerializer,
     MeSerializer,
+    MessageResponseSerializer,
     RegisterBrokerSerializer,
     RegisterDeveloperSerializer,
     RegisterResponseSerializer,
+    UserDocumentDeleteSerializer,
     UserDocumentNameUpdateSerializer,
     UserDocumentSerializer,
     UserDocumentsUploadSerializer,
@@ -327,5 +329,25 @@ class UserDocumentNameUpdateView(generics.GenericAPIView):
                     context={"request": request},
                 ).data,
             },
+            status=status.HTTP_200_OK,
+        )
+
+
+class UserDocumentDeleteView(generics.GenericAPIView):
+    permission_classes = [IsAuthenticated]
+    serializer_class = UserDocumentDeleteSerializer
+
+    @extend_schema(
+        summary="Delete user document",
+        tags=["Auth"],
+        responses={200: MessageResponseSerializer},
+    )
+    def delete(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data={"document_id": kwargs["document_id"]})
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+
+        return Response(
+            {"message": _("Документ успешно удалён.")},
             status=status.HTTP_200_OK,
         )

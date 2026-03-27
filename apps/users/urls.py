@@ -8,6 +8,7 @@ from .views import (
     RegisterBrokerView,
     RegisterDeveloperView,
     ResendCodeView,
+    UserDocumentDeleteView,
     UserDocumentNameUpdateView,
     UserDocumentsUploadView,
     VerifyEmailView,
@@ -44,5 +45,10 @@ urlpatterns = [
         "documents/update-name/",
         UserDocumentNameUpdateView.as_view(),
         name="documents-update-name",
+    ),
+    path(
+        "documents/<int:document_id>/",
+        UserDocumentDeleteView.as_view(),
+        name="user-document-delete",
     ),
 ]

@@ -371,30 +371,46 @@ class UserDocumentsUploadSerializer(FileSizeValidationMixin, serializers.Seriali
         )
 
 
-class UserDocumentNameUpdateSerializer(serializers.Serializer):
+class UserDocumentAccessMixin:
+    def get_user_document(self, document_id):
+        user = self.context["request"].user
+
+        if user.role == User.Roles.ADMIN:
+            raise serializers.ValidationError(
+                {"error": _("Админ не может управлять документами.")}
+            )
+
+        try:
+            return user.documents.get(id=document_id)
+        except UserDocument.DoesNotExist:
+            raise serializers.ValidationError({"document_id": _("Документ не найден.")})
+
+
+class UserDocumentNameUpdateSerializer(UserDocumentAccessMixin, serializers.Serializer):
     document_id = serializers.IntegerField(required=True)
     document_name = serializers.CharField(
         required=True, allow_blank=False, max_length=255
     )
 
     def validate(self, attrs):
-        user = self.context["request"].user
-
-        if user.role == User.Roles.ADMIN:
-            raise serializers.ValidationError(
-                {"error": _("Админ не может изменять документы.")}
-            )
-
-        try:
-            document = user.documents.get(id=attrs["document_id"])
-        except UserDocument.DoesNotExist:
-            raise serializers.ValidationError({"document_id": _("Документ не найден.")})
-
-        attrs["document_obj"] = document
+        attrs["document_obj"] = self.get_user_document(attrs["document_id"])
         return attrs
 
     def save(self, **kwargs):
         document = self.validated_data["document_obj"]
         document.document_name = self.validated_data["document_name"]
         document.save(update_fields=["document_name", "updated_at"])
+        return document
+
+
+class UserDocumentDeleteSerializer(UserDocumentAccessMixin, serializers.Serializer):
+    document_id = serializers.IntegerField(required=True)
+
+    def validate(self, attrs):
+        attrs["document_obj"] = self.get_user_document(attrs["document_id"])
+        return attrs
+
+    def save(self, **kwargs):
+        document = self.validated_data["document_obj"]
+        document.delete()
         return document
