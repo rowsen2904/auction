@@ -2,6 +2,22 @@
 
 from django.conf import settings
 from django.db import migrations, models
+from django.db.models import Q
+
+
+def fix_property_class_before_constraint(apps, schema_editor):
+    Property = apps.get_model("properties", "Property")
+
+    # Для land property_class должен быть пустым
+    Property.objects.filter(type="land").exclude(
+        Q(property_class__isnull=True) | Q(property_class="")
+    ).update(property_class=None)
+
+    # Для остальных типов property_class должен быть заполнен
+    # Если у тебя по бизнес-логике нужно другое значение — замени "economy"
+    Property.objects.exclude(type="land").filter(
+        Q(property_class__isnull=True) | Q(property_class="")
+    ).update(property_class="economy")
 
 
 class Migration(migrations.Migration):
@@ -29,24 +45,23 @@ class Migration(migrations.Migration):
                 verbose_name="Класс объекта",
             ),
         ),
+        migrations.RunPython(
+            fix_property_class_before_constraint,
+            migrations.RunPython.noop,
+        ),
         migrations.AddConstraint(
             model_name="property",
             constraint=models.CheckConstraint(
-                condition=models.Q(
-                    models.Q(
-                        ("type", "land"),
-                        models.Q(
-                            ("property_class__isnull", True),
-                            ("property_class", ""),
-                            _connector="OR",
-                        ),
-                    ),
-                    models.Q(
-                        models.Q(("type", "land"), _negated=True),
-                        ("property_class__isnull", False),
-                        models.Q(("property_class", ""), _negated=True),
-                    ),
-                    _connector="OR",
+                condition=(
+                    (
+                        Q(type="land")
+                        & (Q(property_class__isnull=True) | Q(property_class=""))
+                    )
+                    | (
+                        ~Q(type="land")
+                        & Q(property_class__isnull=False)
+                        & ~Q(property_class="")
+                    )
                 ),
                 name="prop_land_property_class_rule",
             ),
