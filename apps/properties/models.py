@@ -100,6 +100,12 @@ class Property(models.Model):
         default=ModerationStatuses.PENDING,
         db_index=True,
     )
+    moderation_rejection_reason = models.CharField(
+        _("Причина отказа модерации"),
+        max_length=1000,
+        null=True,
+        blank=True,
+    )
 
     created_at = models.DateTimeField(default=timezone.now, db_index=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -123,6 +129,37 @@ class Property(models.Model):
 
     def __str__(self) -> str:
         return f"{self.get_type_display()} • {self.address}"
+
+    def approve_moderation(self):
+        should_update = (
+            self.moderation_status != self.ModerationStatuses.APPROVED
+            or self.moderation_rejection_reason is not None
+        )
+        if not should_update:
+            return
+
+        self.moderation_status = self.ModerationStatuses.APPROVED
+        self.moderation_rejection_reason = None
+        self.save(
+            update_fields=[
+                "moderation_status",
+                "moderation_rejection_reason",
+                "updated_at",
+            ]
+        )
+
+    def reject_moderation(self, reason: str):
+        reason = (reason or "").strip()
+
+        self.moderation_status = self.ModerationStatuses.REJECTED
+        self.moderation_rejection_reason = reason
+        self.save(
+            update_fields=[
+                "moderation_status",
+                "moderation_rejection_reason",
+                "updated_at",
+            ]
+        )
 
 
 class PropertyImage(models.Model):

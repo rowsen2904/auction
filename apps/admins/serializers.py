@@ -1,4 +1,5 @@
 from django.contrib.auth import get_user_model
+from django.utils.translation import gettext_lazy as _
 from properties.models import Property
 from rest_framework import serializers
 
@@ -14,6 +15,27 @@ User = get_user_model()
 class BrokerVerificationSerializer(serializers.Serializer):
     id = serializers.IntegerField(min_value=1)
     action = serializers.ChoiceField(choices=("accept", "reject"))
+    reason = serializers.CharField(
+        required=False,
+        allow_blank=False,
+        trim_whitespace=True,
+        max_length=1000,
+    )
+
+    def validate(self, attrs):
+        action = attrs["action"]
+        reason = (attrs.get("reason") or "").strip()
+
+        if action == "reject":
+            if not reason:
+                raise serializers.ValidationError(
+                    {"reason": _("Причина отказа обязательна.")}
+                )
+            attrs["reason"] = reason
+        else:
+            attrs["reason"] = None
+
+        return attrs
 
 
 class UserSerializer(serializers.ModelSerializer):
@@ -77,6 +99,22 @@ class PendingPropertySerializer(serializers.ModelSerializer):
             "deadline",
             "status",
             "moderation_status",
+            "moderation_rejection_reason",
             "created_at",
         ]
         read_only_fields = fields
+
+
+class PropertyRejectSerializer(serializers.Serializer):
+    reason = serializers.CharField(
+        required=True,
+        allow_blank=False,
+        trim_whitespace=True,
+        max_length=1000,
+    )
+
+    def validate_reason(self, value):
+        value = value.strip()
+        if not value:
+            raise serializers.ValidationError(_("Причина отказа обязательна."))
+        return value

@@ -19,15 +19,31 @@ broker_verify_schema = extend_schema(
         "Admin endpoint to accept or reject broker verification.\n\n"
         "Request:\n"
         "- id: broker user id\n"
-        "- action: accept | reject\n\n"
+        "- action: accept | reject\n"
+        "- reason: required when action=reject\n\n"
+        "Behavior:\n"
+        "- accept: broker becomes verified and rejection reason is cleared\n"
+        "- reject: broker becomes rejected and rejection reason is saved\n\n"
         "Response:\n"
         "- message: human readable result\n"
+        "- broker_id: broker id\n"
+        "- verification_status: pending | accepted | rejected\n"
+        "- is_verified: current verification flag\n"
+        "- verified_at: datetime when accepted\n"
+        "- rejected_at: datetime when rejected\n"
+        "- rejection_reason: saved rejection reason or null\n"
     ),
     request=inline_serializer(
         name="BrokerVerifyRequest",
         fields={
             "id": serializers.IntegerField(min_value=1),
             "action": serializers.ChoiceField(choices=["accept", "reject"]),
+            "reason": serializers.CharField(
+                required=False,
+                allow_blank=False,
+                max_length=1000,
+                help_text="Required when action=reject",
+            ),
         },
     ),
     responses={
@@ -35,10 +51,21 @@ broker_verify_schema = extend_schema(
             name="BrokerVerifyResponse",
             fields={
                 "message": serializers.CharField(),
+                "broker_id": serializers.IntegerField(),
+                "verification_status": serializers.ChoiceField(
+                    choices=["pending", "accepted", "rejected"]
+                ),
+                "is_verified": serializers.BooleanField(),
+                "verified_at": serializers.DateTimeField(allow_null=True),
+                "rejected_at": serializers.DateTimeField(allow_null=True),
+                "rejection_reason": serializers.CharField(
+                    allow_null=True,
+                    required=False,
+                ),
             },
         ),
         400: OpenApiResponse(
-            description="Bad Request (invalid action / broker profile missing / validation error)"
+            description="Bad Request (validation error, reason missing for reject, or broker profile missing)"
         ),
         403: OpenApiResponse(description="Forbidden (admin only)"),
         404: OpenApiResponse(description="Not Found (user not found or not broker)"),
@@ -186,9 +213,11 @@ approve_property_schema = extend_schema(
     summary="Approve property",
     description=(
         "Admin-only. Approves property moderation.\n\n"
+        "Behavior:\n"
+        "- property moderation_status becomes approved\n"
+        "- moderation_rejection_reason is cleared\n\n"
         "Idempotent:\n"
-        "- If status is pending -> becomes approved\n"
-        "- Otherwise returns a message that it's already in current status"
+        "- if already approved, returns current state without error"
     ),
     request=None,
     responses={
@@ -196,6 +225,14 @@ approve_property_schema = extend_schema(
             name="ApprovePropertyResponse",
             fields={
                 "message": serializers.CharField(),
+                "property_id": serializers.IntegerField(),
+                "moderation_status": serializers.ChoiceField(
+                    choices=["pending", "approved", "rejected"]
+                ),
+                "moderation_rejection_reason": serializers.CharField(
+                    allow_null=True,
+                    required=False,
+                ),
             },
         ),
         401: OpenApiResponse(description="Unauthorized"),
@@ -210,18 +247,38 @@ reject_property_schema = extend_schema(
     summary="Reject property",
     description=(
         "Admin-only. Rejects property moderation.\n\n"
+        "Request:\n"
+        "- reason: required rejection reason\n\n"
+        "Behavior:\n"
+        "- property moderation_status becomes rejected\n"
+        "- moderation_rejection_reason is saved\n\n"
         "Idempotent:\n"
-        "- If status is pending -> becomes rejected\n"
-        "- Otherwise returns a message that it's already in current status"
+        "- if already rejected, returns current state without error"
     ),
-    request=None,
+    request=inline_serializer(
+        name="RejectPropertyRequest",
+        fields={
+            "reason": serializers.CharField(
+                required=True,
+                allow_blank=False,
+                max_length=1000,
+                help_text="Required rejection reason",
+            ),
+        },
+    ),
     responses={
         200: inline_serializer(
             name="RejectPropertyResponse",
             fields={
                 "message": serializers.CharField(),
+                "property_id": serializers.IntegerField(),
+                "moderation_status": serializers.ChoiceField(
+                    choices=["pending", "approved", "rejected"]
+                ),
+                "moderation_rejection_reason": serializers.CharField(),
             },
         ),
+        400: OpenApiResponse(description="Bad Request (reason is required)"),
         401: OpenApiResponse(description="Unauthorized"),
         403: OpenApiResponse(description="Forbidden (admin only)"),
         404: OpenApiResponse(description="Not Found (property not found)"),

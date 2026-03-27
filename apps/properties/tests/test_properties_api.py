@@ -57,6 +57,7 @@ class BasePropertyTestCase(APITestCase):
         price=Decimal("12000000.00"),
         status_val=Property.PropertyStatuses.PUBLISHED,
         moderation_status_val=Property.ModerationStatuses.APPROVED,
+        moderation_rejection_reason=None,
     ) -> Property:
         return Property.objects.create(
             owner=owner,
@@ -67,6 +68,7 @@ class BasePropertyTestCase(APITestCase):
             price=price,
             status=status_val,
             moderation_status=moderation_status_val,
+            moderation_rejection_reason=moderation_rejection_reason,
         )
 
 
@@ -284,3 +286,52 @@ class PropertyAPITests(BasePropertyTestCase):
         prop.refresh_from_db()
         self.assertEqual(prop.price, Decimal("12000000.00"))
         self.assertEqual(prop.moderation_status, Property.ModerationStatuses.APPROVED)
+
+    def test_patch_property_clears_moderation_rejection_reason_on_change(self):
+        prop = self._create_property(
+            self.dev1,
+            address="Clear Rejection Reason On Change",
+            price=Decimal("12000000.00"),
+            moderation_status_val=Property.ModerationStatuses.REJECTED,
+            moderation_rejection_reason="Old rejection reason",
+        )
+
+        self.client.force_authenticate(user=self.dev1)
+        resp = self.client.patch(
+            f"{BASE}{prop.id}/",
+            data={"price": "9999999.00"},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+
+        prop.refresh_from_db()
+        self.assertEqual(prop.price, Decimal("9999999.00"))
+        self.assertEqual(prop.moderation_status, Property.ModerationStatuses.PENDING)
+        self.assertIsNone(prop.moderation_rejection_reason)
+
+    def test_patch_property_does_not_clear_rejection_reason_when_value_not_changed(
+        self,
+    ):
+        prop = self._create_property(
+            self.dev1,
+            address="Keep Rejection Reason Without Change",
+            price=Decimal("12000000.00"),
+            moderation_status_val=Property.ModerationStatuses.REJECTED,
+            moderation_rejection_reason="Still valid rejection reason",
+        )
+
+        self.client.force_authenticate(user=self.dev1)
+        resp = self.client.patch(
+            f"{BASE}{prop.id}/",
+            data={"price": "12000000.00"},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+
+        prop.refresh_from_db()
+        self.assertEqual(prop.price, Decimal("12000000.00"))
+        self.assertEqual(prop.moderation_status, Property.ModerationStatuses.REJECTED)
+        self.assertEqual(
+            prop.moderation_rejection_reason,
+            "Still valid rejection reason",
+        )

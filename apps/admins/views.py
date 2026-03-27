@@ -1,4 +1,5 @@
 from django.contrib.auth import get_user_model
+from django.db import transaction
 from django.db.models import Prefetch
 from django.shortcuts import get_object_or_404
 from django.utils.translation import gettext_lazy as _
@@ -26,6 +27,7 @@ from .schemas import (
 from .serializers import (
     BrokerVerificationSerializer,
     PendingPropertySerializer,
+    PropertyRejectSerializer,
     UserActiveUpdateSerializer,
 )
 
@@ -111,21 +113,39 @@ class BrokerVerificationView(generics.GenericAPIView):
 
         user_id = serializer.validated_data["id"]
         action = serializer.validated_data["action"]
+        reason = serializer.validated_data.get("reason")
 
-        user = get_object_or_404(self.get_queryset(), id=user_id)
+        with transaction.atomic():
+            user = get_object_or_404(
+                self.get_queryset().select_for_update(),
+                id=user_id,
+            )
 
-        broker = getattr(user, "broker", None)
-        if broker is None:
-            raise ValidationError({"id": _("Broker profile not found for this user.")})
+            broker = getattr(user, "broker", None)
+            if broker is None:
+                raise ValidationError(
+                    {"id": _("Профиль брокера для этого пользователя не найден.")}
+                )
 
-        if action == "accept":
-            broker.verify_broker()
-            message = _("Broker has been successfully verified.")
-        else:
-            broker.set_as_rejected()
-            message = _("Broker has been rejected.")
+            if action == "accept":
+                broker.verify_broker()
+                message = _("Брокер успешно верифицирован.")
+            else:
+                broker.set_as_rejected(reason=reason)
+                message = _("Брокеру было отказано.")
 
-        return Response({"message": message}, status=status.HTTP_200_OK)
+        return Response(
+            {
+                "message": message,
+                "broker_id": broker.id,
+                "verification_status": broker.verification_status,
+                "is_verified": broker.is_verified,
+                "verified_at": broker.verified_at,
+                "rejected_at": broker.rejected_at,
+                "rejection_reason": broker.rejection_reason,
+            },
+            status=status.HTTP_200_OK,
+        )
 
 
 class UserActiveUpdateView(generics.GenericAPIView):
@@ -186,24 +206,27 @@ class ApprovePropertyView(APIView):
 
     @approve_property_schema
     def patch(self, request, pk: int):
-        prop = Property.objects.only("id", "moderation_status").filter(pk=pk).first()
-        if not prop:
-            return Response(
-                {"detail": _("Not found.")}, status=status.HTTP_404_NOT_FOUND
+        with transaction.atomic():
+            prop = (
+                Property.objects.select_for_update()
+                .only("id", "moderation_status", "moderation_rejection_reason")
+                .filter(pk=pk)
+                .first()
             )
+            if not prop:
+                return Response(
+                    {"detail": _("Not found.")},
+                    status=status.HTTP_404_NOT_FOUND,
+                )
 
-        if prop.moderation_status == Property.ModerationStatuses.PENDING:
-            prop.moderation_status = Property.ModerationStatuses.APPROVED
-            prop.save(update_fields=["moderation_status", "updated_at"])
-            return Response(
-                {"message": _("Property has been successfully approved.")},
-                status=status.HTTP_200_OK,
-            )
+            prop.approve_moderation()
 
         return Response(
             {
-                "message": _("Property has already %(status)s.")
-                % {"status": prop.moderation_status}
+                "message": _("Property has been successfully approved."),
+                "property_id": prop.id,
+                "moderation_status": prop.moderation_status,
+                "moderation_rejection_reason": prop.moderation_rejection_reason,
             },
             status=status.HTTP_200_OK,
         )
@@ -214,24 +237,34 @@ class RejectPropertyView(APIView):
 
     @reject_property_schema
     def patch(self, request, pk: int):
-        prop = Property.objects.only("id", "moderation_status").filter(pk=pk).first()
-        if not prop:
-            return Response(
-                {"detail": _("Not found.")}, status=status.HTTP_404_NOT_FOUND
-            )
+        serializer = PropertyRejectSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
 
-        if prop.moderation_status == Property.ModerationStatuses.PENDING:
-            prop.moderation_status = Property.ModerationStatuses.REJECTED
-            prop.save(update_fields=["moderation_status", "updated_at"])
-            return Response(
-                {"message": _("Property has been successfully rejected.")},
-                status=status.HTTP_200_OK,
+        reason = serializer.validated_data["reason"]
+
+        with transaction.atomic():
+            prop = (
+                Property.objects.select_for_update()
+                .only("id", "moderation_status", "moderation_rejection_reason")
+                .filter(pk=pk)
+                .first()
             )
+            if not prop:
+                return Response(
+                    {"detail": _("Не найдено.")},
+                    status=status.HTTP_404_NOT_FOUND,
+                )
+
+            prop.reject_moderation(reason=reason)
 
         return Response(
             {
-                "message": _("Property has already %(status)s.")
-                % {"status": prop.moderation_status}
+                "message": _(
+                    "Заявка на приобретение недвижимости была успешно отклонена."
+                ),
+                "property_id": prop.id,
+                "moderation_status": prop.moderation_status,
+                "moderation_rejection_reason": prop.moderation_rejection_reason,
             },
             status=status.HTTP_200_OK,
         )

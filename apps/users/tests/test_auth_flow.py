@@ -325,10 +325,13 @@ class TestRegistrationFlow(APITestCase):
             {doc["doc_type"] for doc in resp.data["user"]["documents"]},
             {UserDocument.Types.INN, UserDocument.Types.PASSPORT},
         )
+        self.assertIn("rejection_reason", resp.data["user"]["broker"])
+        self.assertIsNone(resp.data["user"]["broker"]["rejection_reason"])
 
         user = User.objects.get(email=email)
         broker = Broker.objects.get(user=user)
 
+        self.assertIsNone(broker.rejection_reason)
         self.assertFalse(broker.is_verified)
         self.assertEqual(
             broker.verification_status,
@@ -474,3 +477,39 @@ class TestLoginAndRefresh(APITestCase):
         )
         self.assertEqual(refresh.status_code, status.HTTP_200_OK)
         self.assertIn("access", refresh.data)
+
+    def test_login_broker_success_returns_broker_rejection_reason(self):
+        email = "broker_login@example.com"
+        password = "StrongPass123!"
+
+        user = User.objects.create_user(
+            email=email,
+            password=password,
+            role=User.Roles.BROKER,
+            inn_number=make_inn12("7721581040"),
+        )
+        Broker.objects.create(
+            user=user,
+            is_verified=False,
+            verification_status=Broker.VerificationStatuses.REJECTED,
+            rejection_reason="Passport scan is unreadable.",
+        )
+
+        resp = self.client.post(
+            f"{BASE}/login/",
+            data={"email": email, "password": password},
+            format="json",
+        )
+
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.assertEqual(resp.data["user"]["role"], User.Roles.BROKER)
+        self.assertIsNone(resp.data["user"]["developer"])
+        self.assertIsNotNone(resp.data["user"]["broker"])
+        self.assertEqual(
+            resp.data["user"]["broker"]["verification_status"],
+            Broker.VerificationStatuses.REJECTED,
+        )
+        self.assertEqual(
+            resp.data["user"]["broker"]["rejection_reason"],
+            "Passport scan is unreadable.",
+        )

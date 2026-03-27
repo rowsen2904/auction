@@ -25,6 +25,10 @@ class PropertyListSerializer(serializers.ModelSerializer):
     developer = serializers.IntegerField(source="owner_id", read_only=True)
     images = PropertyImageSerializer(many=True, read_only=True)
     moderation_status = serializers.CharField(read_only=True)
+    moderation_rejection_reason = serializers.CharField(
+        read_only=True,
+        allow_null=True,
+    )
 
     class Meta:
         model = Property
@@ -42,6 +46,7 @@ class PropertyListSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
             "moderation_status",
+            "moderation_rejection_reason",
         ]
 
 
@@ -94,12 +99,20 @@ class PropertyUpdateSerializer(serializers.ModelSerializer):
 
         instance = super().update(instance, validated_data)
 
-        if (
-            has_changes
-            and instance.moderation_status != Property.ModerationStatuses.PENDING
-        ):
-            instance.moderation_status = Property.ModerationStatuses.PENDING
-            instance.save(update_fields=["moderation_status", "updated_at"])
+        if has_changes:
+            fields_to_update = []
+
+            if instance.moderation_status != Property.ModerationStatuses.PENDING:
+                instance.moderation_status = Property.ModerationStatuses.PENDING
+                fields_to_update.append("moderation_status")
+
+            if instance.moderation_rejection_reason is not None:
+                instance.moderation_rejection_reason = None
+                fields_to_update.append("moderation_rejection_reason")
+
+            if fields_to_update:
+                fields_to_update.append("updated_at")
+                instance.save(update_fields=fields_to_update)
 
         return instance
 

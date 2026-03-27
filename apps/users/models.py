@@ -149,6 +149,12 @@ class Broker(models.Model):
     is_verified = models.BooleanField(default=False, db_index=True)
     verified_at = models.DateTimeField(null=True, blank=True)
     rejected_at = models.DateTimeField(null=True, blank=True)
+    rejection_reason = models.CharField(
+        _("rejection reason"),
+        max_length=1000,
+        null=True,
+        blank=True,
+    )
     verification_status = models.CharField(
         _("verification status"),
         max_length=20,
@@ -174,35 +180,48 @@ class Broker(models.Model):
         super().save(*args, **kwargs)
 
     def verify_broker(self):
-        if not self.verification_status == self.VerificationStatuses.ACCEPTED:
-            self.verification_status = self.VerificationStatuses.ACCEPTED
-            self.is_verified = True
-            self.rejected_at = None
-            self.verified_at = timezone.now()
-            self.save(
-                update_fields=[
-                    "verification_status",
-                    "is_verified",
-                    "verified_at",
-                    "rejected_at",
-                ]
-            )
+        should_update = (
+            self.verification_status != self.VerificationStatuses.ACCEPTED
+            or self.is_verified is False
+            or self.verified_at is None
+            or self.rejected_at is not None
+            or self.rejection_reason is not None
+        )
+        if not should_update:
+            return
 
-    def set_as_rejected(self):
-        if not self.verification_status == self.VerificationStatuses.REJECTED:
-            # Reject broker and reset verification flags if needed
-            self.verification_status = self.VerificationStatuses.REJECTED
-            self.is_verified = False
-            self.rejected_at = timezone.now()
-            self.verified_at = None
-            self.save(
-                update_fields=[
-                    "verification_status",
-                    "is_verified",
-                    "verified_at",
-                    "rejected_at",
-                ]
-            )
+        self.verification_status = self.VerificationStatuses.ACCEPTED
+        self.is_verified = True
+        self.verified_at = timezone.now()
+        self.rejected_at = None
+        self.rejection_reason = None
+        self.save(
+            update_fields=[
+                "verification_status",
+                "is_verified",
+                "verified_at",
+                "rejected_at",
+                "rejection_reason",
+            ]
+        )
+
+    def set_as_rejected(self, reason: str):
+        reason = (reason or "").strip()
+
+        self.verification_status = self.VerificationStatuses.REJECTED
+        self.is_verified = False
+        self.rejected_at = timezone.now()
+        self.verified_at = None
+        self.rejection_reason = reason
+        self.save(
+            update_fields=[
+                "verification_status",
+                "is_verified",
+                "verified_at",
+                "rejected_at",
+                "rejection_reason",
+            ]
+        )
 
 
 class Developer(models.Model):

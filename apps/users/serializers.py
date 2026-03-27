@@ -221,10 +221,12 @@ class BrokerInfoSerializer(serializers.ModelSerializer):
     class Meta:
         model = Broker
         fields = [
+            "id",
             "is_verified",
             "verification_status",
-            "rejected_at",
             "verified_at",
+            "rejected_at",
+            "rejection_reason",
             "inn_number",
         ]
 
