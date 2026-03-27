@@ -1,3 +1,4 @@
+from auctions.models import Auction
 from django.utils.translation import gettext_lazy as _
 from rest_framework import serializers
 
@@ -29,6 +30,7 @@ class PropertyListSerializer(serializers.ModelSerializer):
         read_only=True,
         allow_null=True,
     )
+    is_editable = serializers.SerializerMethodField()
 
     class Meta:
         model = Property
@@ -47,7 +49,21 @@ class PropertyListSerializer(serializers.ModelSerializer):
             "updated_at",
             "moderation_status",
             "moderation_rejection_reason",
+            "is_editable",
         ]
+
+    def get_is_editable(self, obj):
+        auctions = getattr(obj, "prefetched_auctions", None)
+
+        if auctions is not None:
+            auction = auctions[0] if auctions else None
+        else:
+            auction = obj.auctions.only("status").first()
+
+        if auction is None:
+            return True
+
+        return auction.status == Auction.Status.CANCELLED
 
 
 class PropertyCreateSerializer(serializers.ModelSerializer):

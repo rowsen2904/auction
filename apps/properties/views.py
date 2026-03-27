@@ -1,6 +1,7 @@
 from auctions.models import Auction
 from auctions.permissions import IsDeveloper
 from django.db import IntegrityError, transaction
+from django.db.models import Prefetch
 from django.shortcuts import get_object_or_404
 from django.utils.translation import gettext_lazy as _
 from rest_framework import generics, status
@@ -36,6 +37,12 @@ from .serializers import (
     PropertyUpdateSerializer,
 )
 
+AUCTIONS_PREFETCH = Prefetch(
+    "auctions",
+    queryset=Auction.objects.only("id", "real_property_id", "status"),
+    to_attr="prefetched_auctions",
+)
+
 
 class PropertyListCreateView(generics.ListCreateAPIView):
     pagination_class = PropertyPagination
@@ -46,7 +53,7 @@ class PropertyListCreateView(generics.ListCreateAPIView):
     def get_queryset(self):
         return (
             Property.objects.select_related("owner")
-            .prefetch_related("images")
+            .prefetch_related("images", AUCTIONS_PREFETCH)
             .filter(
                 moderation_status=Property.ModerationStatuses.APPROVED,
                 status__in=[
@@ -90,7 +97,7 @@ class MyPropertiesView(generics.ListAPIView):
     def get_queryset(self):
         return (
             Property.objects.select_related("owner")
-            .prefetch_related("images")
+            .prefetch_related("images", AUCTIONS_PREFETCH)
             .filter(owner=self.request.user)
         )
 
@@ -100,7 +107,9 @@ class MyPropertiesView(generics.ListAPIView):
 
 
 class PropertyDetailView(generics.RetrieveUpdateAPIView):
-    queryset = Property.objects.select_related("owner").prefetch_related("images")
+    queryset = Property.objects.select_related("owner").prefetch_related(
+        "images", AUCTIONS_PREFETCH
+    )
     http_method_names = ["get", "patch", "head", "options"]
 
     def get_permissions(self):

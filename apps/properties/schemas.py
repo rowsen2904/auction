@@ -39,6 +39,10 @@ class DRFDetailErrorSerializer(serializers.Serializer):
 
 PROPERTIES_LIST_DOC = _(
     "Returns a paginated list of properties.\n\n"
+    "Each property also includes `is_editable`:\n"
+    "- `true` if the property is not linked to any auction\n"
+    "- `true` if the linked auction has status `cancelled`\n"
+    "- `false` for all other auction statuses\n\n"
     "Filters are supported via query params:\n"
     "- `type`\n"
     "- `property_class`\n"
@@ -51,7 +55,11 @@ PROPERTIES_LIST_DOC = _(
 )
 
 MY_PROPERTIES_LIST_DOC = (
-    "Returns a paginated list of properties owned by the authenticated developer."
+    "Returns a paginated list of properties owned by the authenticated developer.\n\n"
+    "Each property also includes `is_editable`:\n"
+    "- `true` if the property is not linked to any auction\n"
+    "- `true` if the linked auction has status `cancelled`\n"
+    "- `false` for all other auction statuses"
 )
 
 
@@ -61,7 +69,9 @@ PROPERTIES_CREATE_DOC = _(
     "Owner is set automatically from the authenticated user."
 )
 
-PROPERTY_DETAIL_DOC = _("Returns property details including images.")
+PROPERTY_DETAIL_DOC = _(
+    "Returns property details including images and `is_editable` flag."
+)
 
 PROPERTY_PATCH_DOC = _(
     "Partially updates a property.\n\n"
@@ -133,6 +143,9 @@ properties_list_schema = extend_schema(
                                 "images": [],
                                 "created_at": "2026-02-04T06:00:00Z",
                                 "updated_at": "2026-02-04T06:00:00Z",
+                                "moderation_status": "approved",
+                                "moderation_rejection_reason": None,
+                                "is_editable": True,
                             }
                         ],
                     },
@@ -241,6 +254,9 @@ my_properties_list_schema = extend_schema(
                                 "images": [],
                                 "created_at": "2026-02-04T06:00:00Z",
                                 "updated_at": "2026-02-04T06:00:00Z",
+                                "moderation_status": "approved",
+                                "moderation_rejection_reason": None,
+                                "is_editable": True,
                             }
                         ],
                     },
@@ -369,6 +385,28 @@ property_detail_schema = extend_schema(
         200: OpenApiResponse(
             response=PropertyListSerializer,
             description="Property details.",
+            examples=[
+                OpenApiExample(
+                    "Property detail example",
+                    value={
+                        "id": 1,
+                        "developer": 10,
+                        "type": "apartment",
+                        "address": "Moscow, Tverskaya 1",
+                        "area": "52.50",
+                        "property_class": "comfort",
+                        "price": "12000000.00",
+                        "deadline": "2026-10-01",
+                        "status": "published",
+                        "images": [],
+                        "created_at": "2026-02-04T06:00:00Z",
+                        "updated_at": "2026-02-04T06:00:00Z",
+                        "moderation_status": "approved",
+                        "moderation_rejection_reason": None,
+                        "is_editable": False,
+                    },
+                )
+            ],
         ),
         404: OpenApiResponse(description="Not found."),
     },

@@ -75,7 +75,13 @@ class BasePropertyTestCase(APITestCase):
             moderation_rejection_reason=moderation_rejection_reason,
         )
 
-    def _create_auction(self, owner, prop: Property) -> Auction:
+    def _create_auction(
+        self,
+        owner,
+        prop: Property,
+        *,
+        status_val=Auction.Status.SCHEDULED,
+    ) -> Auction:
         now = timezone.now()
         return Auction.objects.create(
             real_property=prop,
@@ -84,7 +90,7 @@ class BasePropertyTestCase(APITestCase):
             min_price=prop.price,
             start_date=now + timedelta(days=1),
             end_date=now + timedelta(days=2),
-            status=Auction.Status.SCHEDULED,
+            status=status_val,
             min_bid_increment=Decimal("100.00"),
         )
 
@@ -352,6 +358,134 @@ class PropertyAPITests(BasePropertyTestCase):
             prop.moderation_rejection_reason,
             "Still valid rejection reason",
         )
+
+    def test_list_property_has_is_editable_true_when_not_in_auction(self):
+        prop = self._create_property(
+            self.dev1,
+            address="No Auction Editable",
+        )
+
+        resp = self.client.get(BASE, format="json")
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+
+        item = next(x for x in resp.data["results"] if x["id"] == prop.id)
+        self.assertIn("is_editable", item)
+        self.assertTrue(item["is_editable"])
+
+    def test_list_property_has_is_editable_false_when_auction_scheduled(self):
+        prop = self._create_property(
+            self.dev1,
+            address="Scheduled Auction Not Editable",
+        )
+        self._create_auction(
+            self.dev1,
+            prop,
+            status_val=Auction.Status.SCHEDULED,
+        )
+
+        resp = self.client.get(BASE, format="json")
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+
+        item = next(x for x in resp.data["results"] if x["id"] == prop.id)
+        self.assertIn("is_editable", item)
+        self.assertFalse(item["is_editable"])
+
+    def test_list_property_has_is_editable_false_when_auction_active(self):
+        prop = self._create_property(
+            self.dev1,
+            address="Active Auction Not Editable",
+        )
+        self._create_auction(
+            self.dev1,
+            prop,
+            status_val=Auction.Status.ACTIVE,
+        )
+
+        resp = self.client.get(BASE, format="json")
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+
+        item = next(x for x in resp.data["results"] if x["id"] == prop.id)
+        self.assertIn("is_editable", item)
+        self.assertFalse(item["is_editable"])
+
+    def test_list_property_has_is_editable_false_when_auction_finished(self):
+        prop = self._create_property(
+            self.dev1,
+            address="Finished Auction Not Editable",
+        )
+        self._create_auction(
+            self.dev1,
+            prop,
+            status_val=Auction.Status.FINISHED,
+        )
+
+        resp = self.client.get(BASE, format="json")
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+
+        item = next(x for x in resp.data["results"] if x["id"] == prop.id)
+        self.assertIn("is_editable", item)
+        self.assertFalse(item["is_editable"])
+
+    def test_list_property_has_is_editable_true_when_auction_cancelled(self):
+        prop = self._create_property(
+            self.dev1,
+            address="Cancelled Auction Editable",
+        )
+        self._create_auction(
+            self.dev1,
+            prop,
+            status_val=Auction.Status.CANCELLED,
+        )
+
+        resp = self.client.get(BASE, format="json")
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+
+        item = next(x for x in resp.data["results"] if x["id"] == prop.id)
+        self.assertIn("is_editable", item)
+        self.assertTrue(item["is_editable"])
+
+    def test_detail_property_has_is_editable_true_when_not_in_auction(self):
+        prop = self._create_property(
+            self.dev1,
+            address="Detail No Auction Editable",
+        )
+
+        resp = self.client.get(f"{BASE}{prop.id}/", format="json")
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.assertIn("is_editable", resp.data)
+        self.assertTrue(resp.data["is_editable"])
+
+    def test_detail_property_has_is_editable_false_when_auction_scheduled(self):
+        prop = self._create_property(
+            self.dev1,
+            address="Detail Scheduled Auction Not Editable",
+        )
+        self._create_auction(
+            self.dev1,
+            prop,
+            status_val=Auction.Status.SCHEDULED,
+        )
+
+        resp = self.client.get(f"{BASE}{prop.id}/", format="json")
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.assertIn("is_editable", resp.data)
+        self.assertFalse(resp.data["is_editable"])
+
+    def test_detail_property_has_is_editable_true_when_auction_cancelled(self):
+        prop = self._create_property(
+            self.dev1,
+            address="Detail Cancelled Auction Editable",
+        )
+        self._create_auction(
+            self.dev1,
+            prop,
+            status_val=Auction.Status.CANCELLED,
+        )
+
+        resp = self.client.get(f"{BASE}{prop.id}/", format="json")
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.assertIn("is_editable", resp.data)
+        self.assertTrue(resp.data["is_editable"])
 
 
 class MyAvailablePropertiesAPITests(BasePropertyTestCase):
