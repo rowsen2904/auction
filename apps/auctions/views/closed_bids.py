@@ -5,6 +5,7 @@ from decimal import Decimal
 from auctions.models import Auction, Bid
 from auctions.participants import add_participant
 from auctions.permissions import IsBroker
+from auctions.realtime import broadcast_sealed_bid_changed
 from auctions.schemas import (
     closed_bid_create_schema,
     closed_bid_update_schema,
@@ -83,7 +84,6 @@ class ClosedBidCreateView(generics.CreateAPIView):
                 is_sealed=True,
             )
 
-            # Auto-join on bid (если Redis доступен — join будет)
             try:
                 add_participant(
                     auction_id=auction.id,
@@ -91,7 +91,6 @@ class ClosedBidCreateView(generics.CreateAPIView):
                     end_date=auction.end_date,
                 )
             except Exception:
-                # Tests/local env may not have Redis backend
                 pass
 
             auction.bids_count += 1
@@ -107,7 +106,25 @@ class ClosedBidCreateView(generics.CreateAPIView):
                 ]
             )
 
-        return Response(BidSerializer(bid).data, status=status.HTTP_201_CREATED)
+            bid_data = BidSerializer(bid).data
+            auction_patch = {
+                "id": auction.id,
+                "bids_count": auction.bids_count,
+                "current_price": str(auction.current_price),
+                "highest_bid_id": auction.highest_bid_id,
+                "updated_at": auction.updated_at.isoformat(),
+            }
+
+            transaction.on_commit(
+                lambda: broadcast_sealed_bid_changed(
+                    auction_id=auction.id,
+                    action="created",
+                    auction_payload=auction_patch,
+                    bid_payload=bid_data,
+                )
+            )
+
+        return Response(bid_data, status=status.HTTP_201_CREATED)
 
 
 class MyClosedBidUpdateView(generics.UpdateAPIView):

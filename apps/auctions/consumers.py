@@ -6,10 +6,11 @@ from channels.db import database_sync_to_async
 from channels.generic.websocket import AsyncJsonWebsocketConsumer
 from django.db import transaction
 from django.shortcuts import get_object_or_404
-from rest_framework.exceptions import ValidationError
+from rest_framework.exceptions import PermissionDenied, ValidationError
 
 from .models import Auction, Bid
 from .participants import add_participant_with_flag, list_participants
+from .realtime import sealed_bids_group_name
 from .serializers import BidSerializer
 from .services.rules import (
     ctx_for,
@@ -137,7 +138,7 @@ def _create_open_bid_atomic(
         )
 
         # Auto-join on bid (Redis)
-        is_new, cnt = add_participant_with_flag(
+        cnt, is_new = add_participant_with_flag(
             auction_id=auction.id,
             user_id=user.id,
             end_date=auction.end_date,
@@ -160,6 +161,51 @@ def _create_open_bid_atomic(
         }
 
         return auction_patch, BidSerializer(bid).data, participant_event
+
+
+@database_sync_to_async
+def _closed_bids_snapshot_for_user(user, auction_id: int) -> tuple[dict, list[dict]]:
+    auction = get_object_or_404(
+        Auction.objects.only(
+            "id",
+            "mode",
+            "owner_id",
+            "bids_count",
+            "current_price",
+            "highest_bid_id",
+            "updated_at",
+        ),
+        pk=auction_id,
+    )
+
+    if auction.mode != Auction.Mode.CLOSED:
+        raise ValidationError({"detail": "Только для закрытых аукционов."})
+
+    is_admin = bool(
+        getattr(user, "is_staff", False) or getattr(user, "is_superuser", False)
+    )
+
+    if not (is_admin or user.id == auction.owner_id):
+        raise PermissionDenied(
+            "Только владелец/администратор может просматривать список ставок."
+        )
+
+    qs = (
+        Bid.objects.filter(auction_id=auction.id, is_sealed=True)
+        .select_related("broker")
+        .only("id", "auction_id", "broker_id", "amount", "created_at")
+        .order_by("-amount", "-created_at")
+    )
+
+    auction_payload = {
+        "id": auction.id,
+        "bids_count": auction.bids_count,
+        "current_price": str(auction.current_price),
+        "highest_bid_id": auction.highest_bid_id,
+        "updated_at": auction.updated_at.isoformat(),
+    }
+
+    return auction_payload, BidSerializer(qs, many=True).data
 
 
 class AuctionLiveBidConsumer(AsyncJsonWebsocketConsumer):
@@ -275,5 +321,58 @@ class AuctionLiveBidConsumer(AsyncJsonWebsocketConsumer):
                 "auction_id": p["auction_id"],
                 "user_id": p["user_id"],
                 "participants_count": p["participants_count"],
+            }
+        )
+
+
+class ClosedAuctionBidsConsumer(AsyncJsonWebsocketConsumer):
+    async def connect(self):
+        self.auction_id = int(self.scope["url_route"]["kwargs"]["auction_id"])
+        self.group_name = sealed_bids_group_name(self.auction_id)
+
+        user = self.scope.get("user")
+        if not user or not getattr(user, "is_authenticated", False):
+            await self.close(code=4401)
+            return
+
+        try:
+            auction_payload, bids = await _closed_bids_snapshot_for_user(
+                user, self.auction_id
+            )
+        except PermissionDenied:
+            await self.close(code=4403)
+            return
+        except ValidationError:
+            await self.close(code=4404)
+            return
+
+        await self.channel_layer.group_add(self.group_name, self.channel_name)
+        await self.accept()
+
+        await self.send_json(
+            {
+                "type": "sealed_bids_snapshot",
+                "auction": auction_payload,
+                "bids": bids,
+            }
+        )
+
+    async def disconnect(self, code):
+        await self.channel_layer.group_discard(self.group_name, self.channel_name)
+
+    async def receive_json(self, content, **kwargs):
+        await self.send_json(
+            {
+                "type": "error",
+                "detail": "Этот WebSocket только для чтения. "
+                "Создание и изменение ставок выполняется через HTTP.",
+            }
+        )
+
+    async def sealed_bid_changed(self, event):
+        await self.send_json(
+            {
+                "type": "sealed_bid_changed",
+                **event["payload"],
             }
         )
