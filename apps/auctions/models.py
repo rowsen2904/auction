@@ -4,6 +4,7 @@ from __future__ import annotations
 from decimal import Decimal
 
 from django.conf import settings
+from django.core.exceptions import ValidationError
 from django.core.validators import MinValueValidator
 from django.db import models
 from django.db.models import Q
@@ -89,6 +90,14 @@ class Auction(models.Model):
         blank=True,
         related_name="shortlisted_in_auctions",
     )
+    min_bid_increment = models.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        validators=[MinValueValidator(Decimal("1.00"))],
+        help_text="Минимальный шаг повышения ставки для open-аукциона.",
+    )
 
     created_at = models.DateTimeField(default=timezone.now, db_index=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -120,6 +129,17 @@ class Auction(models.Model):
                 check=Q(min_price__gte=Decimal("0.00")),
                 name="auc_min_price_gte_0",
             ),
+            models.CheckConstraint(
+                check=(
+                    (
+                        Q(mode="open")
+                        & Q(min_bid_increment__isnull=False)
+                        & Q(min_bid_increment__gte=Decimal("1.00"))
+                    )
+                    | (Q(mode="closed") & Q(min_bid_increment__isnull=True))
+                ),
+                name="auc_open_requires_increment_closed_null",
+            ),
         ]
 
     def __str__(self) -> str:
@@ -131,6 +151,27 @@ class Auction(models.Model):
         return (
             self.status == self.Status.ACTIVE and self.start_date <= now < self.end_date
         )
+
+    def clean(self):
+        super().clean()
+
+        if self.mode == self.Mode.OPEN:
+            if self.min_bid_increment is None:
+                raise ValidationError(
+                    {
+                        "min_bid_increment": "Для открытого аукциона "
+                        "укажите минимальный шаг ставки."
+                    }
+                )
+            if self.min_bid_increment < Decimal("1.00"):
+                raise ValidationError(
+                    {
+                        "min_bid_increment": "Минимальный шаг ставки должен быть не меньше 1."
+                    }
+                )
+
+        if self.mode == self.Mode.CLOSED:
+            self.min_bid_increment = None
 
 
 class Bid(models.Model):

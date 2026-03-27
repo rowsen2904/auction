@@ -61,14 +61,29 @@ class AuctionCreateSerializer(serializers.ModelSerializer):
         queryset=Property.objects.all(),
         write_only=True,
     )
+    min_bid_increment = serializers.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+        required=False,
+        allow_null=True,
+    )
 
     class Meta:
         model = Auction
-        fields = ["property_id", "mode", "min_price", "start_date", "end_date"]
+        fields = [
+            "property_id",
+            "mode",
+            "min_price",
+            "min_bid_increment",
+            "start_date",
+            "end_date",
+        ]
 
     def validate(self, attrs):
         start = attrs.get("start_date")
         end = attrs.get("end_date")
+        mode = attrs.get("mode")
+        min_bid_increment = attrs.get("min_bid_increment")
         now = timezone.now()
 
         min_offset = getattr(settings, "AUCTION_MIN_START_OFFSET", timedelta(seconds=1))
@@ -119,6 +134,28 @@ class AuctionCreateSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError(
                     {"end_date": f"Продолжительность должна быть не более {max_dur}."}
                 )
+
+        if mode == Auction.Mode.OPEN:
+            if min_bid_increment is None:
+                raise serializers.ValidationError(
+                    {
+                        "min_bid_increment": (
+                            "Для открытого аукциона необходимо указать минимальный шаг ставки."
+                        )
+                    }
+                )
+
+            if min_bid_increment < Decimal("1.00"):
+                raise serializers.ValidationError(
+                    {
+                        "min_bid_increment": (
+                            "Минимальный шаг ставки должен быть не меньше 1."
+                        )
+                    }
+                )
+
+        elif mode == Auction.Mode.CLOSED:
+            attrs["min_bid_increment"] = None
 
         return attrs
 

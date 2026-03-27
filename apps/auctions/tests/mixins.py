@@ -88,17 +88,25 @@ class AuctionTestMixin:
         start: timezone.datetime | None = None,
         end: timezone.datetime | None = None,
         min_price: Decimal = Decimal("1000.00"),
+        min_bid_increment: Decimal | None = None,
         current_price: Decimal = Decimal("0.00"),
     ) -> Auction:
         now = timezone.now()
         start_dt = start or (now + timedelta(hours=2))
         end_dt = end or (now + timedelta(days=1))
 
+        if mode == Auction.Mode.OPEN and min_bid_increment is None:
+            min_bid_increment = Decimal("150000.00")
+
+        if mode == Auction.Mode.CLOSED:
+            min_bid_increment = None
+
         return Auction.objects.create(
             owner=owner,
             real_property=prop,
             mode=mode,
             min_price=min_price,
+            min_bid_increment=min_bid_increment,
             start_date=start_dt,
             end_date=end_dt,
             status=status_val,

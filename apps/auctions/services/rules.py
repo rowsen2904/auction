@@ -105,15 +105,21 @@ def open_compute_amount(*, auction: Auction, requested: Decimal) -> Decimal:
     """
     OPEN rules:
     - First bid always equals min_price (ignore requested).
-    - Afterwards: requested must be >= current_price + OPEN_BID_MIN_INCREMENT.
+    - Afterwards: requested must be >= current_price + auction.min_bid_increment.
     """
     if auction.bids_count == 0 or auction.current_price <= Decimal("0.00"):
         return auction.min_price
 
-    step = getattr(settings, "OPEN_BID_MIN_INCREMENT", Decimal("150000.00"))
+    step = auction.min_bid_increment
+    if step is None:
+        raise ValidationError(
+            {"detail": "Для открытого аукциона не задан минимальный шаг ставки."}
+        )
+
     min_allowed = auction.current_price + step
     if requested < min_allowed:
         raise ValidationError(
             {"detail": f"Предложение должно быть не менее {min_allowed}."}
         )
+
     return requested

@@ -52,6 +52,11 @@ Create an auction.
 Only authenticated developers can create auctions.
 property_id must belong to current developer.
 Auction is created as SCHEDULED; Celery beat will activate at start_date.
+
+Rules for pricing:
+- min_price: minimum acceptable bid amount for the auction
+- OPEN auction: min_bid_increment is required and must be >= 1
+- CLOSED auction: min_bid_increment must be null / omitted
 """
 
 AUCTION_DETAIL_DOC = """
@@ -59,6 +64,10 @@ Auction details.
 
 OPEN: last 50 bids are public.
 CLOSED: bids are visible only to owner/admin (via /sealed-bids/ endpoint).
+
+Fields:
+- min_price: auction minimum price
+- min_bid_increment: open-auction minimum increment, null for closed auctions
 """
 
 AUCTION_CANCEL_DOC = """
@@ -183,7 +192,43 @@ auction_detail_schema = extend_schema(
 
 my_auctions_schema = extend_schema(
     summary="List my auctions",
-    description="Developer-only list of own auctions. Supports same filters as public list.",
+    description=(
+        "Developer-only list of own auctions. "
+        "Supports same filters, ordering and pagination as public list."
+    ),
+    parameters=[
+        OpenApiParameter(
+            "mode", OpenApiTypes.STR, required=False, description="open|closed"
+        ),
+        OpenApiParameter(
+            "status",
+            OpenApiTypes.STR,
+            required=False,
+            description="scheduled|active|finished|cancelled",
+        ),
+        OpenApiParameter("property_id", OpenApiTypes.INT, required=False),
+        OpenApiParameter("propertyId", OpenApiTypes.INT, required=False),
+        OpenApiParameter("active", OpenApiTypes.BOOL, required=False),
+        OpenApiParameter("starts_before", OpenApiTypes.DATETIME, required=False),
+        OpenApiParameter("starts_after", OpenApiTypes.DATETIME, required=False),
+        OpenApiParameter("ends_before", OpenApiTypes.DATETIME, required=False),
+        OpenApiParameter("ends_after", OpenApiTypes.DATETIME, required=False),
+        OpenApiParameter("ordering", OpenApiTypes.STR, required=False),
+        OpenApiParameter("page", OpenApiTypes.INT, required=False),
+        OpenApiParameter("page_size", OpenApiTypes.INT, required=False),
+    ],
+    responses={
+        200: OpenApiResponse(
+            response=AuctionListSerializer,
+            description="Paginated list of current developer auctions.",
+        ),
+        401: OpenApiResponse(
+            response=DRFDetailErrorSerializer, description="Unauthorized."
+        ),
+        403: OpenApiResponse(
+            response=DRFDetailErrorSerializer, description="Forbidden."
+        ),
+    },
     tags=["Auctions"],
 )
 
