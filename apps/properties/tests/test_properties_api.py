@@ -639,3 +639,78 @@ class MyAvailablePropertiesAPITests(BasePropertyTestCase):
         self.assertEqual(resp.data["count"], 2)
         self.assertEqual(resp.data["results"][0]["address"], "Big Area")
         self.assertEqual(resp.data["results"][1]["address"], "Small Area")
+
+    def test_create_land_property_without_property_class_success(self):
+        self.client.force_authenticate(user=self.dev1)
+
+        address = "Land Without Class"
+        resp = self.client.post(
+            BASE,
+            data={
+                "type": "land",
+                "address": address,
+                "area": "50.00",
+                "price": "1000000.00",
+                "status": "draft",
+            },
+            format="json",
+        )
+        self.assertEqual(resp.status_code, status.HTTP_201_CREATED)
+
+        prop = Property.objects.get(address=address)
+        self.assertEqual(prop.type, "land")
+        self.assertIsNone(prop.property_class)
+
+    def test_create_non_land_property_without_property_class_returns_400(self):
+        self.client.force_authenticate(user=self.dev1)
+
+        resp = self.client.post(
+            BASE,
+            data={
+                "type": "apartment",
+                "address": "Apartment Without Class",
+                "area": "50.00",
+                "price": "1000000.00",
+                "status": "draft",
+            },
+            format="json",
+        )
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("property_class", resp.data)
+
+    def test_patch_property_type_to_land_clears_property_class(self):
+        prop = self._create_property(
+            self.dev1,
+            p_type="apartment",
+            p_class="comfort",
+            address="Patch To Land",
+        )
+
+        self.client.force_authenticate(user=self.dev1)
+        resp = self.client.patch(
+            f"{BASE}{prop.id}/",
+            data={"type": "land"},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+
+        prop.refresh_from_db()
+        self.assertEqual(prop.type, "land")
+        self.assertIsNone(prop.property_class)
+
+    def test_patch_land_property_to_non_land_without_property_class_returns_400(self):
+        prop = self._create_property(
+            self.dev1,
+            p_type="land",
+            p_class=None,
+            address="Land To Apartment Without Class",
+        )
+
+        self.client.force_authenticate(user=self.dev1)
+        resp = self.client.patch(
+            f"{BASE}{prop.id}/",
+            data={"type": "apartment"},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("property_class", resp.data)

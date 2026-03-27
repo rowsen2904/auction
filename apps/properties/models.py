@@ -73,6 +73,8 @@ class Property(models.Model):
         _("Класс объекта"),
         max_length=32,
         choices=PropertyClasses.choices,
+        null=True,
+        blank=True,
         db_index=True,
     )
 
@@ -125,6 +127,20 @@ class Property(models.Model):
         constraints = [
             models.CheckConstraint(check=Q(area__gt=0), name="prop_area_gt_0"),
             models.CheckConstraint(check=Q(price__gte=0), name="prop_price_gte_0"),
+            models.CheckConstraint(
+                check=(
+                    (
+                        Q(type="land")
+                        & (Q(property_class__isnull=True) | Q(property_class=""))
+                    )
+                    | (
+                        ~Q(type="land")
+                        & Q(property_class__isnull=False)
+                        & ~Q(property_class="")
+                    )
+                ),
+                name="prop_land_property_class_rule",
+            ),
         ]
 
     def __str__(self) -> str:

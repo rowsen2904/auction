@@ -67,7 +67,12 @@ class PropertyListSerializer(serializers.ModelSerializer):
 
 
 class PropertyCreateSerializer(serializers.ModelSerializer):
-    # owner will be set from request.user in the view
+    property_class = serializers.ChoiceField(
+        choices=Property.PropertyClasses.choices,
+        required=False,
+        allow_null=True,
+    )
+
     class Meta:
         model = Property
         fields = [
@@ -82,8 +87,28 @@ class PropertyCreateSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ["id"]
 
+    def validate(self, attrs):
+        property_type = attrs.get("type")
+        property_class = attrs.get("property_class", None)
+
+        if property_type != Property.PropertyTypes.LAND and not property_class:
+            raise serializers.ValidationError(
+                {"property_class": _("Это поле обязательно, если тип не land.")}
+            )
+
+        if property_type == Property.PropertyTypes.LAND:
+            attrs["property_class"] = None
+
+        return attrs
+
 
 class PropertyUpdateSerializer(serializers.ModelSerializer):
+    property_class = serializers.ChoiceField(
+        choices=Property.PropertyClasses.choices,
+        required=False,
+        allow_null=True,
+    )
+
     RESET_MODERATION_FIELDS = {
         "type",
         "address",
@@ -105,6 +130,20 @@ class PropertyUpdateSerializer(serializers.ModelSerializer):
             "deadline",
             "status",
         ]
+
+    def validate(self, attrs):
+        property_type = attrs.get("type", self.instance.type)
+        property_class = attrs.get("property_class", self.instance.property_class)
+
+        if property_type != Property.PropertyTypes.LAND and not property_class:
+            raise serializers.ValidationError(
+                {"property_class": _("Это поле обязательно, если тип не land.")}
+            )
+
+        if property_type == Property.PropertyTypes.LAND:
+            attrs["property_class"] = None
+
+        return attrs
 
     def update(self, instance, validated_data):
         has_changes = any(
