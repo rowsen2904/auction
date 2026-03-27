@@ -146,3 +146,9 @@ class PropertyImageUpdateSerializer(serializers.ModelSerializer):
                 {"error": _("Хотя бы одно поле должно быть передано.")}
             )
         return attrs
+
+
+class MyAvailablePropertySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Property
+        fields = ["id", "address", "area"]

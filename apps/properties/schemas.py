@@ -11,6 +11,7 @@ from drf_spectacular.utils import (
 from rest_framework import serializers
 
 from .serializers import (
+    MyAvailablePropertySerializer,
     PropertyCreateSerializer,
     PropertyImageCreateSerializer,
     PropertyImageSerializer,
@@ -93,6 +94,11 @@ PROPERTY_IMAGE_PATCH_DOC = _(
     "If `is_primary=true`, all other property images will be marked as `is_primary=false`.\n"
     "If `sort_order` conflicts with another image of the same property, "
     "the endpoint returns a validation error."
+)
+
+MY_AVAILABLE_PROPERTIES_LIST_DOC = (
+    "Returns a paginated list of the authenticated developer's properties "
+    "that are approved by moderation, published, and not assigned to any auction."
 )
 
 # -----------------------------
@@ -578,5 +584,62 @@ property_image_patch_schema = extend_schema(
             ],
         ),
     },
+    tags=["Properties"],
+)
+
+my_available_properties_list_schema = extend_schema(
+    summary="List my available properties",
+    description=MY_AVAILABLE_PROPERTIES_LIST_DOC,
+    responses={
+        200: OpenApiResponse(
+            response=MyAvailablePropertySerializer,
+            description="Paginated list of available properties for auction creation.",
+            examples=[
+                OpenApiExample(
+                    "My available properties list example",
+                    value={
+                        "count": 2,
+                        "next": None,
+                        "previous": None,
+                        "results": [
+                            {
+                                "id": 1,
+                                "address": "Moscow, Tverskaya 1",
+                                "area": "52.50",
+                            },
+                            {
+                                "id": 2,
+                                "address": "Saint Petersburg, Nevsky 10",
+                                "area": "78.00",
+                            },
+                        ],
+                    },
+                )
+            ],
+        ),
+        401: OpenApiResponse(description="Unauthorized."),
+        403: OpenApiResponse(description="Forbidden (not a developer)."),
+    },
+    parameters=[
+        OpenApiParameter(
+            "page",
+            OpenApiTypes.INT,
+            required=False,
+            location=OpenApiParameter.QUERY,
+        ),
+        OpenApiParameter(
+            "page_size",
+            OpenApiTypes.INT,
+            required=False,
+            location=OpenApiParameter.QUERY,
+        ),
+        OpenApiParameter(
+            "ordering",
+            OpenApiTypes.STR,
+            required=False,
+            location=OpenApiParameter.QUERY,
+            description="Example: `-created_at`, `address`, `area`",
+        ),
+    ],
     tags=["Properties"],
 )

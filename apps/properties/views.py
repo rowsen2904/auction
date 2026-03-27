@@ -14,6 +14,7 @@ from .models import Property, PropertyImage
 from .pagination import PropertyPagination
 from .permissions import IsPropertyOwner
 from .schemas import (
+    my_available_properties_list_schema,
     my_properties_list_schema,
     properties_create_schema,
     properties_list_schema,
@@ -26,6 +27,7 @@ from .schemas import (
     property_patch_schema,
 )
 from .serializers import (
+    MyAvailablePropertySerializer,
     PropertyCreateSerializer,
     PropertyImageCreateSerializer,
     PropertyImageSerializer,
@@ -310,3 +312,27 @@ class PropertyImageUpdateView(generics.GenericAPIView):
         image = self.get_image(prop)
         image.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class MyAvailablePropertiesView(generics.ListAPIView):
+    pagination_class = PropertyPagination
+    permission_classes = [IsAuthenticated, IsDeveloper]
+    serializer_class = MyAvailablePropertySerializer
+    ordering_fields = ["created_at", "address", "area"]
+    ordering = ["-created_at"]
+
+    def get_queryset(self):
+        return (
+            Property.objects.filter(
+                owner=self.request.user,
+                moderation_status=Property.ModerationStatuses.APPROVED,
+                status=Property.PropertyStatuses.PUBLISHED,
+                auctions__isnull=True,
+            )
+            .only("id", "address", "area", "created_at")
+            .order_by(*self.ordering)
+        )
+
+    @my_available_properties_list_schema
+    def get(self, request, *args, **kwargs):
+        return super().get(request, *args, **kwargs)

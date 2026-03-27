@@ -1,8 +1,11 @@
+from datetime import timedelta
 from decimal import Decimal
 
+from auctions.models import Auction
 from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test.client import BytesIO
+from django.utils import timezone
 from PIL import Image
 from properties.models import Property
 from rest_framework import status
@@ -11,6 +14,7 @@ from rest_framework.test import APITestCase
 User = get_user_model()
 
 BASE = "/api/v1/properties/"
+BASE_MY_AVAILABLE = "/api/v1/properties/my/available/"
 
 
 def make_png_file(name: str = "img.png") -> SimpleUploadedFile:
@@ -69,6 +73,19 @@ class BasePropertyTestCase(APITestCase):
             status=status_val,
             moderation_status=moderation_status_val,
             moderation_rejection_reason=moderation_rejection_reason,
+        )
+
+    def _create_auction(self, owner, prop: Property) -> Auction:
+        now = timezone.now()
+        return Auction.objects.create(
+            real_property=prop,
+            owner=owner,
+            mode=Auction.Mode.OPEN,
+            min_price=prop.price,
+            start_date=now + timedelta(days=1),
+            end_date=now + timedelta(days=2),
+            status=Auction.Status.SCHEDULED,
+            min_bid_increment=Decimal("100.00"),
         )
 
 
@@ -335,3 +352,156 @@ class PropertyAPITests(BasePropertyTestCase):
             prop.moderation_rejection_reason,
             "Still valid rejection reason",
         )
+
+
+class MyAvailablePropertiesAPITests(BasePropertyTestCase):
+    def test_my_available_properties_requires_auth(self):
+        resp = self.client.get(BASE_MY_AVAILABLE, format="json")
+        self.assertEqual(resp.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_my_available_properties_requires_developer(self):
+        self.client.force_authenticate(user=self.broker)
+
+        resp = self.client.get(BASE_MY_AVAILABLE, format="json")
+        self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_my_available_properties_returns_only_current_developer_properties(self):
+        self.client.force_authenticate(user=self.dev1)
+
+        self._create_property(self.dev1, address="Dev1 Property 1")
+        self._create_property(self.dev1, address="Dev1 Property 2")
+        self._create_property(self.dev2, address="Dev2 Hidden Property")
+
+        resp = self.client.get(BASE_MY_AVAILABLE, format="json")
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.assertEqual(resp.data["count"], 2)
+
+        addresses = [item["address"] for item in resp.data["results"]]
+        self.assertIn("Dev1 Property 1", addresses)
+        self.assertIn("Dev1 Property 2", addresses)
+        self.assertNotIn("Dev2 Hidden Property", addresses)
+
+    def test_my_available_properties_includes_only_approved_and_published(self):
+        self.client.force_authenticate(user=self.dev1)
+
+        self._create_property(
+            self.dev1,
+            address="Visible Approved Published",
+            status_val=Property.PropertyStatuses.PUBLISHED,
+            moderation_status_val=Property.ModerationStatuses.APPROVED,
+        )
+        self._create_property(
+            self.dev1,
+            address="Hidden Pending",
+            status_val=Property.PropertyStatuses.PUBLISHED,
+            moderation_status_val=Property.ModerationStatuses.PENDING,
+        )
+        self._create_property(
+            self.dev1,
+            address="Hidden Rejected",
+            status_val=Property.PropertyStatuses.PUBLISHED,
+            moderation_status_val=Property.ModerationStatuses.REJECTED,
+        )
+        self._create_property(
+            self.dev1,
+            address="Hidden Draft",
+            status_val=Property.PropertyStatuses.DRAFT,
+            moderation_status_val=Property.ModerationStatuses.APPROVED,
+        )
+        self._create_property(
+            self.dev1,
+            address="Hidden Sold",
+            status_val=Property.PropertyStatuses.SOLD,
+            moderation_status_val=Property.ModerationStatuses.APPROVED,
+        )
+        self._create_property(
+            self.dev1,
+            address="Hidden Archived",
+            status_val=Property.PropertyStatuses.ARCHIVED,
+            moderation_status_val=Property.ModerationStatuses.APPROVED,
+        )
+
+        resp = self.client.get(BASE_MY_AVAILABLE, format="json")
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.assertEqual(resp.data["count"], 1)
+        self.assertEqual(
+            resp.data["results"][0]["address"],
+            "Visible Approved Published",
+        )
+
+    def test_my_available_properties_excludes_properties_already_in_auction(self):
+        self.client.force_authenticate(user=self.dev1)
+
+        available_prop = self._create_property(
+            self.dev1,
+            address="Available Property",
+        )
+        busy_prop = self._create_property(
+            self.dev1,
+            address="Auction Hidden Property",
+        )
+        self._create_auction(self.dev1, busy_prop)
+
+        resp = self.client.get(BASE_MY_AVAILABLE, format="json")
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.assertEqual(resp.data["count"], 1)
+        self.assertEqual(resp.data["results"][0]["id"], available_prop.id)
+        self.assertEqual(resp.data["results"][0]["address"], "Available Property")
+
+    def test_my_available_properties_returns_only_id_address_area_fields(self):
+        self.client.force_authenticate(user=self.dev1)
+
+        self._create_property(
+            self.dev1,
+            address="Field Check Property",
+            area=Decimal("77.70"),
+            price=Decimal("5550000.00"),
+        )
+
+        resp = self.client.get(BASE_MY_AVAILABLE, format="json")
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.assertEqual(resp.data["count"], 1)
+
+        item = resp.data["results"][0]
+        self.assertEqual(set(item.keys()), {"id", "address", "area"})
+        self.assertEqual(item["address"], "Field Check Property")
+        self.assertEqual(item["area"], "77.70")
+
+    def test_my_available_properties_paginated(self):
+        self.client.force_authenticate(user=self.dev1)
+
+        for i in range(21):
+            self._create_property(
+                self.dev1,
+                address=f"Available Paginated {i}",
+                area=Decimal("50.00") + i,
+            )
+
+        resp = self.client.get(BASE_MY_AVAILABLE, format="json")
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+
+        self.assertIn("count", resp.data)
+        self.assertIn("results", resp.data)
+        self.assertEqual(resp.data["count"], 21)
+        self.assertEqual(len(resp.data["results"]), 20)
+        self.assertIsNotNone(resp.data["next"])
+
+    def test_my_available_properties_ordering_by_area_desc(self):
+        self.client.force_authenticate(user=self.dev1)
+
+        self._create_property(
+            self.dev1,
+            address="Small Area",
+            area=Decimal("40.00"),
+        )
+        self._create_property(
+            self.dev1,
+            address="Big Area",
+            area=Decimal("90.00"),
+        )
+
+        resp = self.client.get(f"{BASE_MY_AVAILABLE}?ordering=-area", format="json")
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.assertEqual(resp.data["count"], 2)
+        self.assertEqual(resp.data["results"][0]["address"], "Big Area")
+        self.assertEqual(resp.data["results"][1]["address"], "Small Area")
