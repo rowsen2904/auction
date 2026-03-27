@@ -2,10 +2,11 @@ from __future__ import annotations
 
 from decimal import Decimal
 
+import auctions.participants as auction_participants
+from asgiref.sync import async_to_sync
 from auctions.models import Auction, Bid
-from auctions.participants import add_participant
 from auctions.permissions import IsBroker
-from auctions.realtime import broadcast_sealed_bid_changed
+from auctions.realtime import broadcast_sealed_bid_changed, sealed_bids_group_name
 from auctions.schemas import (
     closed_bid_create_schema,
     closed_bid_update_schema,
@@ -20,6 +21,7 @@ from auctions.services.rules import (
     ensure_not_owner,
     is_admin,
 )
+from channels.layers import get_channel_layer
 from django.db import transaction
 from django.shortcuts import get_object_or_404
 from django.utils.translation import gettext_lazy as _
@@ -27,6 +29,58 @@ from rest_framework import generics, status
 from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
+
+
+def _broadcast_sealed_participants_changed(
+    *,
+    auction_id: int,
+    action: str,  # "joined" | "removed"
+    user_id: int,
+    participants: list[int],
+) -> None:
+    channel_layer = get_channel_layer()
+    if not channel_layer:
+        return
+
+    async_to_sync(channel_layer.group_send)(
+        sealed_bids_group_name(auction_id),
+        {
+            "type": "sealed_participants_changed",
+            "payload": {
+                "action": action,
+                "auction_id": auction_id,
+                "user_id": user_id,
+                "participants": participants,
+                "participants_count": len(participants),
+            },
+        },
+    )
+
+
+def _recalc_closed_auction_state(*, auction: Auction) -> dict:
+    qs = Bid.objects.filter(auction_id=auction.id, is_sealed=True)
+
+    highest = qs.order_by("-amount", "-created_at").only("id", "amount").first()
+
+    auction.bids_count = qs.count()
+    auction.current_price = highest.amount if highest else Decimal("0.00")
+    auction.highest_bid_id = highest.id if highest else None
+    auction.save(
+        update_fields=[
+            "bids_count",
+            "current_price",
+            "highest_bid_id",
+            "updated_at",
+        ]
+    )
+
+    return {
+        "id": auction.id,
+        "bids_count": auction.bids_count,
+        "current_price": str(auction.current_price),
+        "highest_bid_id": auction.highest_bid_id,
+        "updated_at": auction.updated_at.isoformat(),
+    }
 
 
 class ClosedBidCreateView(generics.CreateAPIView):
@@ -39,6 +93,7 @@ class ClosedBidCreateView(generics.CreateAPIView):
 
     def create(self, request, *args, **kwargs):
         auction_id = int(kwargs["pk"])
+
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         amount: Decimal = serializer.validated_data["amount"]
@@ -56,6 +111,7 @@ class ClosedBidCreateView(generics.CreateAPIView):
                     "bids_count",
                     "current_price",
                     "highest_bid_id",
+                    "updated_at",
                 ),
                 pk=auction_id,
             )
@@ -71,7 +127,9 @@ class ClosedBidCreateView(generics.CreateAPIView):
             ensure_min_price(ctx, amount=amount)
 
             if Bid.objects.filter(
-                auction_id=auction.id, broker_id=request.user.id, is_sealed=True
+                auction_id=auction.id,
+                broker_id=request.user.id,
+                is_sealed=True,
             ).exists():
                 raise ValidationError(
                     {"detail": "В закрытом аукционе можно сделать только одну ставку."}
@@ -84,59 +142,51 @@ class ClosedBidCreateView(generics.CreateAPIView):
                 is_sealed=True,
             )
 
-            try:
-                add_participant(
-                    auction_id=auction.id,
-                    user_id=request.user.id,
-                    end_date=auction.end_date,
-                )
-            except Exception:
-                pass
-
-            auction.bids_count += 1
-            if amount > auction.current_price:
-                auction.current_price = amount
-                auction.highest_bid_id = bid.id
-            auction.save(
-                update_fields=[
-                    "bids_count",
-                    "current_price",
-                    "highest_bid_id",
-                    "updated_at",
-                ]
+            participant_result = auction_participants.add_participant_with_flag(
+                auction_id=auction.id,
+                user_id=request.user.id,
+                end_date=auction.end_date,
             )
+            was_added = False
+            if isinstance(participant_result, tuple) and len(participant_result) == 2:
+                _, was_added = participant_result
 
+            auction_patch = _recalc_closed_auction_state(auction=auction)
             bid_data = BidSerializer(bid).data
-            auction_patch = {
-                "id": auction.id,
-                "bids_count": auction.bids_count,
-                "current_price": str(auction.current_price),
-                "highest_bid_id": auction.highest_bid_id,
-                "updated_at": auction.updated_at.isoformat(),
-            }
+            participants = auction_participants.list_participants(auction_id=auction.id)
 
-            transaction.on_commit(
-                lambda: broadcast_sealed_bid_changed(
+            def _after_commit():
+                broadcast_sealed_bid_changed(
                     auction_id=auction.id,
                     action="created",
                     auction_payload=auction_patch,
                     bid_payload=bid_data,
                 )
-            )
+                if was_added:
+                    _broadcast_sealed_participants_changed(
+                        auction_id=auction.id,
+                        action="joined",
+                        user_id=request.user.id,
+                        participants=participants,
+                    )
+
+            transaction.on_commit(_after_commit)
 
         return Response(bid_data, status=status.HTTP_201_CREATED)
 
 
-class MyClosedBidUpdateView(generics.UpdateAPIView):
+class MyClosedBidUpdateView(generics.GenericAPIView):
     permission_classes = [IsAuthenticated, IsBroker]
     serializer_class = BidUpdateSerializer
-    http_method_names = ["patch", "head", "options"]
+    http_method_names = ["patch", "delete", "head", "options"]
 
     @closed_bid_update_schema
-    def patch(self, request, *args, **kwargs):  # type: ignore[override]
+    def patch(self, request, *args, **kwargs):
         auction_id = int(kwargs["pk"])
+
         serializer = self.get_serializer(data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
+
         amount = serializer.validated_data.get("amount")
         if amount is None:
             raise ValidationError({"amount": "Это поле обязательно к заполнению."})
@@ -153,6 +203,8 @@ class MyClosedBidUpdateView(generics.UpdateAPIView):
                     "end_date",
                     "current_price",
                     "highest_bid_id",
+                    "bids_count",
+                    "updated_at",
                 ),
                 pk=auction_id,
             )
@@ -172,44 +224,113 @@ class MyClosedBidUpdateView(generics.UpdateAPIView):
 
             bid = get_object_or_404(
                 Bid.objects.select_for_update().only(
-                    "id", "amount", "auction_id", "broker_id", "is_sealed"
+                    "id",
+                    "amount",
+                    "auction_id",
+                    "broker_id",
+                    "is_sealed",
+                    "created_at",
                 ),
                 auction_id=auction.id,
                 broker_id=request.user.id,
                 is_sealed=True,
             )
 
-            old_amount = bid.amount
             bid.amount = amount
-            bid.save(update_fields=["amount"])  # <-- IMPORTANT: no updated_at
+            bid.save(update_fields=["amount"])
 
-            need_recalc = False
-            if amount > auction.current_price:
-                auction.current_price = amount
-                auction.highest_bid_id = bid.id
-            else:
-                if auction.highest_bid_id == bid.id and amount < old_amount:
-                    need_recalc = True
+            auction_patch = _recalc_closed_auction_state(auction=auction)
+            bid_data = BidSerializer(bid).data
 
-            if need_recalc:
-                top = (
-                    Bid.objects.filter(auction_id=auction.id, is_sealed=True)
-                    .order_by("-amount", "-id")
-                    .only("id", "amount")
-                    .first()
+            transaction.on_commit(
+                lambda: broadcast_sealed_bid_changed(
+                    auction_id=auction.id,
+                    action="updated",
+                    auction_payload=auction_patch,
+                    bid_payload=bid_data,
                 )
-                if top:
-                    auction.current_price = top.amount
-                    auction.highest_bid_id = top.id
-                else:
-                    auction.current_price = Decimal("0.00")
-                    auction.highest_bid_id = None
-
-            auction.save(
-                update_fields=["current_price", "highest_bid_id", "updated_at"]
             )
 
-        return Response(BidSerializer(bid).data, status=status.HTTP_200_OK)
+        return Response(bid_data, status=status.HTTP_200_OK)
+
+    def delete(self, request, *args, **kwargs):
+        auction_id = int(kwargs["pk"])
+
+        with transaction.atomic():
+            auction = get_object_or_404(
+                Auction.objects.select_for_update().only(
+                    "id",
+                    "owner_id",
+                    "mode",
+                    "status",
+                    "min_price",
+                    "start_date",
+                    "end_date",
+                    "current_price",
+                    "highest_bid_id",
+                    "bids_count",
+                    "updated_at",
+                ),
+                pk=auction_id,
+            )
+
+            ctx = ctx_for(auction=auction, user=request.user)
+            ensure_mode(
+                ctx,
+                allowed={Auction.Mode.CLOSED},
+                message="Удаление ставок по протоколу HTTP "
+                "разрешено только для закрытых аукционов.",
+            )
+            ensure_active_window(ctx)
+            ensure_not_owner(ctx)
+
+            bid = get_object_or_404(
+                Bid.objects.select_for_update().only(
+                    "id",
+                    "amount",
+                    "auction_id",
+                    "broker_id",
+                    "is_sealed",
+                    "created_at",
+                ),
+                auction_id=auction.id,
+                broker_id=request.user.id,
+                is_sealed=True,
+            )
+
+            bid_data = BidSerializer(bid).data
+
+            before_count = auction_participants.participants_count(
+                auction_id=auction.id
+            )
+            bid.delete()
+            after_count = auction_participants.remove_participant(
+                auction_id=auction.id,
+                user_id=request.user.id,
+            )
+            was_removed = after_count < before_count
+
+            auction_patch = _recalc_closed_auction_state(auction=auction)
+            participants = auction_participants.list_participants(auction_id=auction.id)
+
+            def _after_commit():
+                broadcast_sealed_bid_changed(
+                    auction_id=auction.id,
+                    action="deleted",
+                    auction_payload=auction_patch,
+                    bid_payload=bid_data,
+                )
+                if was_removed:
+                    _broadcast_sealed_participants_changed(
+                        auction_id=auction.id,
+                        action="removed",
+                        user_id=request.user.id,
+                        participants=participants,
+                    )
+
+            transaction.on_commit(_after_commit)
+
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 class ClosedBidsListForOwnerAdminView(generics.ListAPIView):
@@ -223,7 +344,8 @@ class ClosedBidsListForOwnerAdminView(generics.ListAPIView):
     def get_queryset(self):
         auction_id = int(self.kwargs["pk"])
         auction = get_object_or_404(
-            Auction.objects.only("id", "owner_id", "mode"), pk=auction_id
+            Auction.objects.only("id", "owner_id", "mode"),
+            pk=auction_id,
         )
 
         if auction.mode != Auction.Mode.CLOSED:

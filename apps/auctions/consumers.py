@@ -69,7 +69,6 @@ def _last_bids(auction_id: int, limit: int = 50) -> list[dict]:
 
 @database_sync_to_async
 def _participants_snapshot(auction_id: int) -> list[int]:
-    # Redis call in a thread
     return list_participants(auction_id=auction_id)
 
 
@@ -80,12 +79,6 @@ def _create_open_bid_atomic(
     user,
     requested_amount: Decimal,
 ) -> tuple[dict, dict, dict | None]:
-    """
-    Creates OPEN bid with DB lock + updates cache.
-    Auto-joins participant in Redis on successful bid creation.
-    Returns:
-      (auction_patch, bid_data, participant_event_or_none)
-    """
     with transaction.atomic():
         auction = get_object_or_404(
             Auction.objects.select_for_update().only(
@@ -137,7 +130,6 @@ def _create_open_bid_atomic(
             ]
         )
 
-        # Auto-join on bid (Redis)
         cnt, is_new = add_participant_with_flag(
             auction_id=auction.id,
             user_id=user.id,
@@ -164,7 +156,9 @@ def _create_open_bid_atomic(
 
 
 @database_sync_to_async
-def _closed_bids_snapshot_for_user(user, auction_id: int) -> tuple[dict, list[dict]]:
+def _closed_bids_snapshot_for_user(
+    user, auction_id: int
+) -> tuple[dict, list[dict], list[int]]:
     auction = get_object_or_404(
         Auction.objects.only(
             "id",
@@ -197,6 +191,8 @@ def _closed_bids_snapshot_for_user(user, auction_id: int) -> tuple[dict, list[di
         .order_by("-amount", "-created_at")
     )
 
+    participants = list_participants(auction_id=auction.id)
+
     auction_payload = {
         "id": auction.id,
         "bids_count": auction.bids_count,
@@ -205,23 +201,10 @@ def _closed_bids_snapshot_for_user(user, auction_id: int) -> tuple[dict, list[di
         "updated_at": auction.updated_at.isoformat(),
     }
 
-    return auction_payload, BidSerializer(qs, many=True).data
+    return auction_payload, BidSerializer(qs, many=True).data, participants
 
 
 class AuctionLiveBidConsumer(AsyncJsonWebsocketConsumer):
-    """
-    WS: /ws/auctions/<auction_id>/
-
-    Client:
-      { "type": "bid", "amount": "2500000.00" }
-
-    Server:
-      { "type": "auction_snapshot", "auction": {...}, "bids": [...] }
-      { "type": "participants_snapshot", "participants": [..] }
-      { "type": "participant_joined", "auction_id": 1, "user_id": 10, "participants_count": 5 }
-      { "type": "bid_created", "auction": {...}, "bid": {...} }
-    """
-
     async def connect(self):
         self.auction_id = int(self.scope["url_route"]["kwargs"]["auction_id"])
         self.group_name = f"auction_{self.auction_id}"
@@ -293,7 +276,6 @@ class AuctionLiveBidConsumer(AsyncJsonWebsocketConsumer):
             await self.send_json({"type": "error", "detail": "Внутренняя ошибка."})
             return
 
-        # If participant is new -> notify everyone in realtime
         if participant_event:
             await self.channel_layer.group_send(
                 self.group_name,
@@ -326,6 +308,35 @@ class AuctionLiveBidConsumer(AsyncJsonWebsocketConsumer):
 
 
 class ClosedAuctionBidsConsumer(AsyncJsonWebsocketConsumer):
+    """
+    WS: /ws/auctions/<auction_id>/sealed-bids/
+
+    Server:
+      {
+        "type": "sealed_bids_snapshot",
+        "auction": {...},
+        "bids": [...],
+        "participants": [1, 5, 7],
+        "participants_count": 3
+      }
+
+      {
+        "type": "sealed_bid_changed",
+        "action": "created" | "updated" | "deleted",
+        "auction": {...},
+        "bid": {...}
+      }
+
+      {
+        "type": "sealed_participants_changed",
+        "action": "joined" | "removed",
+        "auction_id": 12,
+        "user_id": 55,
+        "participants": [5, 7],
+        "participants_count": 2
+      }
+    """
+
     async def connect(self):
         self.auction_id = int(self.scope["url_route"]["kwargs"]["auction_id"])
         self.group_name = sealed_bids_group_name(self.auction_id)
@@ -336,7 +347,7 @@ class ClosedAuctionBidsConsumer(AsyncJsonWebsocketConsumer):
             return
 
         try:
-            auction_payload, bids = await _closed_bids_snapshot_for_user(
+            auction_payload, bids, participants = await _closed_bids_snapshot_for_user(
                 user, self.auction_id
             )
         except PermissionDenied:
@@ -354,6 +365,8 @@ class ClosedAuctionBidsConsumer(AsyncJsonWebsocketConsumer):
                 "type": "sealed_bids_snapshot",
                 "auction": auction_payload,
                 "bids": bids,
+                "participants": participants,
+                "participants_count": len(participants),
             }
         )
 
@@ -365,7 +378,7 @@ class ClosedAuctionBidsConsumer(AsyncJsonWebsocketConsumer):
             {
                 "type": "error",
                 "detail": "Этот WebSocket только для чтения. "
-                "Создание и изменение ставок выполняется через HTTP.",
+                "Создание, изменение и удаление ставок выполняется через HTTP.",
             }
         )
 
@@ -373,6 +386,14 @@ class ClosedAuctionBidsConsumer(AsyncJsonWebsocketConsumer):
         await self.send_json(
             {
                 "type": "sealed_bid_changed",
+                **event["payload"],
+            }
+        )
+
+    async def sealed_participants_changed(self, event):
+        await self.send_json(
+            {
+                "type": "sealed_participants_changed",
                 **event["payload"],
             }
         )

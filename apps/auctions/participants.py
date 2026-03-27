@@ -3,34 +3,12 @@ from __future__ import annotations
 from datetime import timedelta
 from typing import Iterable, Tuple
 
-from asgiref.sync import async_to_sync
-from channels.layers import get_channel_layer
 from django.core.cache import cache
 from django_redis import get_redis_connection
 
 
 def _participants_key(auction_id: int) -> str:
     return f"auction:{auction_id}:participants"
-
-
-def _broadcast_joined(
-    *, auction_id: int, user_id: int, participants_count: int
-) -> None:
-    channel_layer = get_channel_layer()
-    if not channel_layer:
-        return
-
-    async_to_sync(channel_layer.group_send)(
-        f"auction_{auction_id}",
-        {
-            "type": "participant_joined",
-            "payload": {
-                "auction_id": auction_id,
-                "user_id": user_id,
-                "participants_count": participants_count,
-            },
-        },
-    )
 
 
 def _cache_timeout_seconds(end_date) -> int:
@@ -46,7 +24,7 @@ def add_participant_with_flag(
 ) -> Tuple[int, bool]:
     """
     Adds participant to Redis set.
-    Fallback to Django cache if Redis backend is unavailable (tests/dev without Redis).
+    Fallback to Django cache if Redis backend is unavailable.
     Returns: (participants_count, was_added)
     """
     key = _participants_key(auction_id)
@@ -57,22 +35,13 @@ def add_participant_with_flag(
         expire_at = end_date + timedelta(days=1)
         r.expireat(key, int(expire_at.timestamp()))
         count = int(r.scard(key))
-        was_added = bool(added)
+        return count, bool(added)
     except NotImplementedError:
-        # Cache fallback (LocMem in tests)
         s = cache.get(key) or set()
         before = len(s)
         s.add(int(user_id))
         cache.set(key, s, timeout=_cache_timeout_seconds(end_date))
-        count = len(s)
-        was_added = len(s) > before
-
-    if was_added:
-        _broadcast_joined(
-            auction_id=auction_id, user_id=user_id, participants_count=count
-        )
-
-    return count, was_added
+        return len(s), len(s) > before
 
 
 def add_participant(*, auction_id: int, user_id: int, end_date) -> int:
@@ -120,14 +89,25 @@ def participants_count(*, auction_id: int) -> int:
         return len(s)
 
 
-def remove_participant(*, auction_id: int, user_id: int) -> int:
+def remove_participant_with_flag(*, auction_id: int, user_id: int) -> tuple[int, bool]:
     key = _participants_key(auction_id)
     try:
         r = get_redis_connection("default")
-        r.srem(key, str(user_id))
-        return int(r.scard(key))
+        removed = int(r.srem(key, str(user_id)))  # 1 if removed
+        count = int(r.scard(key))
+        return count, bool(removed)
     except NotImplementedError:
         s = cache.get(key) or set()
+        before = len(s)
         s.discard(int(user_id))
+        removed = len(s) < before
         cache.set(key, s, timeout=3600)
-        return len(s)
+        return len(s), removed
+
+
+def remove_participant(*, auction_id: int, user_id: int) -> int:
+    count, _ = remove_participant_with_flag(
+        auction_id=auction_id,
+        user_id=user_id,
+    )
+    return count

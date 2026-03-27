@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from auctions.models import Auction
-from auctions.participants import add_participant, list_participants
+from auctions.participants import add_participant_with_flag, list_participants
 from auctions.permissions import IsBroker
 from auctions.realtime import broadcast_participant_joined
 from auctions.schemas import join_schema, participants_list_schema
@@ -20,7 +20,8 @@ class AuctionJoinView(APIView):
     @join_schema
     def post(self, request, pk: int):
         auction = get_object_or_404(
-            Auction.objects.only("id", "owner_id", "end_date", "status"), pk=pk
+            Auction.objects.only("id", "owner_id", "end_date", "status"),
+            pk=pk,
         )
 
         if request.user.id == auction.owner_id:
@@ -31,12 +32,18 @@ class AuctionJoinView(APIView):
         if auction.status in (Auction.Status.CANCELLED, Auction.Status.FINISHED):
             raise ValidationError({"detail": "К аукциону нельзя присоединиться."})
 
-        count = add_participant(
-            auction_id=auction.id, user_id=request.user.id, end_date=auction.end_date
+        count, was_added = add_participant_with_flag(
+            auction_id=auction.id,
+            user_id=request.user.id,
+            end_date=auction.end_date,
         )
-        broadcast_participant_joined(
-            auction_id=auction.id, user_id=request.user.id, participants_count=count
-        )
+
+        if was_added:
+            broadcast_participant_joined(
+                auction_id=auction.id,
+                user_id=request.user.id,
+                participants_count=count,
+            )
 
         return Response(
             {
@@ -54,18 +61,16 @@ class AuctionParticipantsView(APIView):
     @participants_list_schema
     def get(self, request, pk: int):
         auction = get_object_or_404(
-            Auction.objects.only("id", "mode", "owner_id"), pk=pk
+            Auction.objects.only("id", "mode", "owner_id"),
+            pk=pk,
         )
 
-        # CLOSED: only owner/admin
         if auction.mode == Auction.Mode.CLOSED and not (
             is_admin(request.user) or request.user.id == auction.owner_id
         ):
             raise PermissionDenied(
-                (
-                    "Только владелец/администратор может просматривать "
-                    "список участников завершившихся аукций."
-                )
+                "Только владелец/администратор может "
+                "просматривать список участников закрытого аукциона."
             )
 
         participants = list_participants(auction_id=auction.id)
