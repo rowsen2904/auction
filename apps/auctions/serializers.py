@@ -43,6 +43,7 @@ class AuctionListSerializer(serializers.ModelSerializer):
             "owner_id",
             "mode",
             "min_price",
+            "min_bid_increment",
             "start_date",
             "end_date",
             "status",
