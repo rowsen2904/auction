@@ -17,4 +17,9 @@ app.conf.beat_schedule = {
         "task": "migtender.tasks.cleanup_beat_tasks",
         "schedule": crontab(hour=3, minute=0),  # every day at 03:00
     },
+    # Daily check for overdue deals
+    "check_overdue_deals_daily": {
+        "task": "deals.tasks.check_overdue_deals",
+        "schedule": crontab(hour=4, minute=0),  # every day at 04:00
+    },
 }

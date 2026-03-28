@@ -81,7 +81,8 @@ class ClosedSelectWinnerView(APIView):
         with transaction.atomic():
             auction = get_object_or_404(
                 Auction.objects.select_for_update().only(
-                    "id", "owner_id", "mode", "status", "winner_bid_id"
+                    "id", "owner_id", "mode", "status", "winner_bid_id",
+                    "real_property_id", "end_date",
                 ),
                 pk=pk,
             )
@@ -115,5 +116,11 @@ class ClosedSelectWinnerView(APIView):
 
             auction.winner_bid_id = bid.id
             auction.save(update_fields=["winner_bid_id", "updated_at"])
+
+            # Create deal for this winner
+            from deals.services import create_deal_from_bid
+
+            bid_obj = Bid.objects.get(id=bid_id)
+            create_deal_from_bid(auction=auction, bid=bid_obj)
 
         return Response({"winner_bid_id": bid_id}, status=status.HTTP_200_OK)

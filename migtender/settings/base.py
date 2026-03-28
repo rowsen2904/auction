@@ -53,6 +53,8 @@ INSTALLED_APPS = [
     "properties",
     "auctions",
     "admins",
+    "deals",
+    "payments",
 ]
 
 MIDDLEWARE = [
@@ -309,3 +311,10 @@ AUCTION_MIN_DURATION = timedelta(seconds=1)  # min duration
 AUCTION_MAX_DURATION = timedelta(days=30)  # max duration
 # <=10 min to start => only admin can cancel
 AUCTION_CANCEL_LOCK_BEFORE_START = timedelta(minutes=10)
+
+
+# Deals & Payments
+from decimal import Decimal as _Decimal  # noqa: E402
+
+PLATFORM_COMMISSION_RATE = _Decimal("0.80")  # 0.8%
+DEAL_DOCUMENT_DEADLINE_DAYS = 7

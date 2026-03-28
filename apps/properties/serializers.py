@@ -42,6 +42,7 @@ class PropertyListSerializer(serializers.ModelSerializer):
             "area",
             "property_class",
             "price",
+            "commission_rate",
             "deadline",
             "status",
             "images",
@@ -82,6 +83,7 @@ class PropertyCreateSerializer(serializers.ModelSerializer):
             "area",
             "property_class",
             "price",
+            "commission_rate",
             "deadline",
             "status",
         ]
@@ -127,6 +129,7 @@ class PropertyUpdateSerializer(serializers.ModelSerializer):
             "area",
             "property_class",
             "price",
+            "commission_rate",
             "deadline",
             "status",
         ]

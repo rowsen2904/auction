@@ -40,6 +40,11 @@ urlpatterns = [
     path(
         "api/v1/auctions/", include(("auctions.urls", "auctions"), namespace="auctions")
     ),
+    path("api/v1/deals/", include(("deals.urls", "deals"), namespace="deals")),
+    path(
+        "api/v1/payments/",
+        include(("payments.urls", "payments"), namespace="payments"),
+    ),
 ]
 
 if settings.DEBUG:

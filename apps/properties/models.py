@@ -86,6 +86,16 @@ class Property(models.Model):
         db_index=True,
     )
 
+    commission_rate = models.DecimalField(
+        _("Комиссия брокера (%)"),
+        max_digits=5,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        validators=[MinValueValidator(Decimal("0.00"))],
+        help_text=_("Индивидуальная ставка комиссии застройщика для брокера (%)."),
+    )
+
     deadline = models.DateField(_("Дедлайн"), null=True, blank=True, db_index=True)
 
     status = models.CharField(
