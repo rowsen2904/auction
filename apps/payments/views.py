@@ -3,7 +3,7 @@ from __future__ import annotations
 from decimal import Decimal
 
 from django.db import transaction
-from django.db.models import Case, Q, Sum, Value, When
+from django.db.models import Case, Sum, Value, When
 from django.shortcuts import get_object_or_404
 from django.utils.translation import gettext_lazy as _
 from rest_framework import status
@@ -15,6 +15,11 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from .models import Payment
+from .schemas import (
+    payment_list_schema,
+    payment_summary_schema,
+    payment_upload_receipt_schema,
+)
 from .serializers import (
     DeveloperPaymentSummarySerializer,
     PaymentListSerializer,
@@ -42,11 +47,16 @@ class PaymentListView(ListAPIView):
         # Default: broker — sees both commission types
         return qs.filter(deal__broker=user)
 
+    @payment_list_schema
+    def get(self, request, *args, **kwargs):
+        return super().get(request, *args, **kwargs)
+
 
 class PaymentSummaryView(APIView):
     permission_classes = [IsAuthenticated]
 
-    def get(self, request):
+    @payment_summary_schema
+    def get(self, request, *args, **kwargs):
         user = request.user
 
         if getattr(user, "is_developer", False):
@@ -130,14 +140,13 @@ class UploadReceiptView(APIView):
     permission_classes = [IsAdminUser]
     parser_classes = [MultiPartParser, FormParser]
 
+    @payment_upload_receipt_schema
     def post(self, request, pk: int):
         ser = ReceiptUploadSerializer(data=request.data)
         ser.is_valid(raise_exception=True)
 
         with transaction.atomic():
-            payment = get_object_or_404(
-                Payment.objects.select_for_update(), pk=pk
-            )
+            payment = get_object_or_404(Payment.objects.select_for_update(), pk=pk)
 
             if payment.type != Payment.Type.PLATFORM_COMMISSION:
                 raise ValidationError(
@@ -151,9 +160,7 @@ class UploadReceiptView(APIView):
 
             payment.receipt_document = ser.validated_data["receipt_document"]
             payment.status = Payment.Status.PAID
-            payment.save(
-                update_fields=["receipt_document", "status", "updated_at"]
-            )
+            payment.save(update_fields=["receipt_document", "status", "updated_at"])
 
         return Response(
             {"detail": "Чек загружен. Выплата отмечена как оплаченная."},
