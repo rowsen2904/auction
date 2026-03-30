@@ -15,6 +15,7 @@ from .serializers import BidSerializer
 from .services.rules import (
     ctx_for,
     ensure_active_window,
+    ensure_broker_verified,
     ensure_min_price,
     ensure_mode,
     ensure_not_current_leader,
@@ -99,6 +100,7 @@ def _create_open_bid_atomic(
 
         ctx = ctx_for(auction=auction, user=user)
 
+        ensure_broker_verified(user)
         ensure_mode(
             ctx,
             allowed={Auction.Mode.OPEN},

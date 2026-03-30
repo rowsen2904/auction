@@ -9,6 +9,8 @@ from django.urls import NoReverseMatch, reverse
 from django.utils import timezone
 from properties.models import Property
 
+from apps.users.models import Broker, Developer
+
 User = get_user_model()
 
 
@@ -51,10 +53,26 @@ class AuctionTestMixin:
         self.admin = User.objects.create_user(
             email="admin@test.com",
             password="StrongPass123!",
-            role=User.Roles.DEVELOPER,
+            role=User.Roles.ADMIN,
             is_active=True,
             is_staff=True,
             is_superuser=True,
+        )
+
+        Developer.objects.create(user=self.dev1, company_name="Dev 1")
+        Developer.objects.create(user=self.dev2, company_name="Dev 2")
+
+        Broker.objects.create(
+            user=self.broker1,
+            is_verified=True,
+            verification_status=Broker.VerificationStatuses.ACCEPTED,
+            verified_at=timezone.now(),
+        )
+        Broker.objects.create(
+            user=self.broker2,
+            is_verified=True,
+            verification_status=Broker.VerificationStatuses.ACCEPTED,
+            verified_at=timezone.now(),
         )
 
     def create_property(

@@ -9,6 +9,7 @@ from auctions.models import Auction, Bid
 from auctions.participants import is_participant
 from django.conf import settings
 from django.contrib.auth import get_user_model
+from django.core.exceptions import ObjectDoesNotExist
 from django.utils import timezone
 from rest_framework.exceptions import PermissionDenied, ValidationError
 
@@ -30,6 +31,21 @@ def is_admin(user) -> bool:
     return bool(
         getattr(user, "is_staff", False) or getattr(user, "is_superuser", False)
     )
+
+
+def ensure_broker_verified(user) -> None:
+    if not getattr(user, "is_broker", False):
+        raise ValidationError({"detail": "Только брокер может участвовать в аукционе."})
+
+    try:
+        broker = user.broker
+    except ObjectDoesNotExist:
+        raise ValidationError({"detail": "Профиль брокера не найден."})
+
+    if not broker.is_verified:
+        raise ValidationError(
+            {"detail": "Только верифицированный брокер может участвовать в аукционе."}
+        )
 
 
 def ensure_mode(ctx: Ctx, *, allowed: set[str], message: str) -> None:

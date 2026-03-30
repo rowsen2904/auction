@@ -13,6 +13,7 @@ from .mixins import AuctionTestMixin
 class TestParticipantsAPI(APITestCase, AuctionTestMixin):
     def setUp(self):
         self.create_users()
+        self.broker1.broker.verify_broker()
         self.prop1 = self.create_property(self.dev1, address="Dev1 Property A")
 
     def test_join_endpoint_works(self):
@@ -132,3 +133,27 @@ class TestParticipantsAPI(APITestCase, AuctionTestMixin):
 
         self.assertEqual(resp.status_code, status.HTTP_200_OK)
         self.assertIn("participants", resp.data)
+
+    def test_unverified_broker_cannot_join_auction(self):
+        now = timezone.now()
+        auc = self.create_auction(
+            owner=self.dev1,
+            prop=self.prop1,
+            mode=Auction.Mode.OPEN,
+            status_val=Auction.Status.ACTIVE,
+            start=now - timedelta(minutes=1),
+            end=now + timedelta(hours=1),
+        )
+
+        self.broker1.broker.is_verified = False
+        self.broker1.broker.save(update_fields=["is_verified"])
+
+        self.client.force_authenticate(user=self.broker1)
+        url = self.rev("auction-join", pk=auc.id)
+        resp = self.client.post(url, format="json")
+
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(
+            resp.data["detail"],
+            "Только верифицированный брокер может участвовать в аукционе.",
+        )

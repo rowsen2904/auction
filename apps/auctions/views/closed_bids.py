@@ -16,6 +16,7 @@ from auctions.serializers import BidCreateSerializer, BidSerializer, BidUpdateSe
 from auctions.services.rules import (
     ctx_for,
     ensure_active_window,
+    ensure_broker_verified,
     ensure_min_price,
     ensure_mode,
     ensure_not_owner,
@@ -117,6 +118,7 @@ class ClosedBidCreateView(generics.CreateAPIView):
             )
 
             ctx = ctx_for(auction=auction, user=request.user)
+            ensure_broker_verified(request.user)
             ensure_mode(
                 ctx,
                 allowed={Auction.Mode.CLOSED},
@@ -210,6 +212,7 @@ class MyClosedBidUpdateView(generics.GenericAPIView):
             )
 
             ctx = ctx_for(auction=auction, user=request.user)
+            ensure_broker_verified(request.user)
             ensure_mode(
                 ctx,
                 allowed={Auction.Mode.CLOSED},
@@ -275,6 +278,7 @@ class MyClosedBidUpdateView(generics.GenericAPIView):
             )
 
             ctx = ctx_for(auction=auction, user=request.user)
+            ensure_broker_verified(request.user)
             ensure_mode(
                 ctx,
                 allowed={Auction.Mode.CLOSED},

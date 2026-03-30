@@ -5,7 +5,7 @@ from auctions.participants import add_participant_with_flag, list_participants
 from auctions.permissions import IsBroker
 from auctions.realtime import broadcast_participant_joined
 from auctions.schemas import join_schema, participants_list_schema
-from auctions.services.rules import is_admin
+from auctions.services.rules import ensure_broker_verified, is_admin
 from django.shortcuts import get_object_or_404
 from rest_framework import status
 from rest_framework.exceptions import PermissionDenied, ValidationError
@@ -31,6 +31,8 @@ class AuctionJoinView(APIView):
 
         if auction.status in (Auction.Status.CANCELLED, Auction.Status.FINISHED):
             raise ValidationError({"detail": "К аукциону нельзя присоединиться."})
+
+        ensure_broker_verified(request.user)
 
         count, was_added = add_participant_with_flag(
             auction_id=auction.id,
