@@ -4,6 +4,7 @@ from datetime import timedelta
 from decimal import Decimal
 
 from django.conf import settings
+from django.contrib.auth import get_user_model
 from django.db import transaction
 from django.utils import timezone
 from properties.models import Property
@@ -12,11 +13,31 @@ from rest_framework import serializers
 from .models import Auction, Bid
 from .tasks import schedule_auction_status_tasks
 
+User = get_user_model()
+
 
 class AuctionPropertySerializer(serializers.ModelSerializer):
     class Meta:
         model = Property
         fields = ["id", "address"]
+
+
+class BidBrokerShortSerializer(serializers.ModelSerializer):
+    fullname = serializers.CharField(source="get_full_name", read_only=True)
+
+    class Meta:
+        model = User
+        fields = ["id", "fullname"]
+        read_only_fields = fields
+
+
+class WinnerBidShortSerializer(serializers.ModelSerializer):
+    broker = BidBrokerShortSerializer(read_only=True)
+
+    class Meta:
+        model = Bid
+        fields = ["id", "broker", "amount", "is_sealed"]
+        read_only_fields = fields
 
 
 class BidSerializer(serializers.ModelSerializer):
@@ -33,7 +54,7 @@ class AuctionListSerializer(serializers.ModelSerializer):
     real_property = AuctionPropertySerializer(read_only=True)
     owner_id = serializers.IntegerField(read_only=True)
     highest_bid_id = serializers.IntegerField(read_only=True)
-    winner_bid_id = serializers.IntegerField(read_only=True)
+    winner_bid = WinnerBidShortSerializer(read_only=True)
 
     class Meta:
         model = Auction
@@ -50,7 +71,7 @@ class AuctionListSerializer(serializers.ModelSerializer):
             "bids_count",
             "current_price",
             "highest_bid_id",
-            "winner_bid_id",
+            "winner_bid",
             "created_at",
             "updated_at",
         ]
