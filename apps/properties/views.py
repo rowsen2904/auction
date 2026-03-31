@@ -130,6 +130,25 @@ class PropertyDetailView(generics.RetrieveUpdateAPIView):
     def patch(self, request, *args, **kwargs):
         return super().patch(request, *args, **kwargs)
 
+    def perform_update(self, serializer):
+        prop = serializer.instance
+
+        has_blocking_auction = Auction.objects.filter(
+            real_property=prop,
+            status__in=[
+                Auction.Status.SCHEDULED,
+                Auction.Status.ACTIVE,
+                Auction.Status.FINISHED,
+            ],
+        ).exists()
+
+        if has_blocking_auction:
+            raise ValidationError(
+                {"detail": "Нельзя редактировать объект, который стоит на аукционе."}
+            )
+
+        serializer.save()
+
 
 class PropertyDeleteView(generics.DestroyAPIView):
     permission_classes = [IsAuthenticated, IsDeveloper, IsPropertyOwner]
