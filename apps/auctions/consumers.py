@@ -310,35 +310,6 @@ class AuctionLiveBidConsumer(AsyncJsonWebsocketConsumer):
 
 
 class ClosedAuctionBidsConsumer(AsyncJsonWebsocketConsumer):
-    """
-    WS: /ws/auctions/<auction_id>/sealed-bids/
-
-    Server:
-      {
-        "type": "sealed_bids_snapshot",
-        "auction": {...},
-        "bids": [...],
-        "participants": [1, 5, 7],
-        "participants_count": 3
-      }
-
-      {
-        "type": "sealed_bid_changed",
-        "action": "created" | "updated" | "deleted",
-        "auction": {...},
-        "bid": {...}
-      }
-
-      {
-        "type": "sealed_participants_changed",
-        "action": "joined" | "removed",
-        "auction_id": 12,
-        "user_id": 55,
-        "participants": [5, 7],
-        "participants_count": 2
-      }
-    """
-
     async def connect(self):
         self.auction_id = int(self.scope["url_route"]["kwargs"]["auction_id"])
         self.group_name = sealed_bids_group_name(self.auction_id)
@@ -380,7 +351,7 @@ class ClosedAuctionBidsConsumer(AsyncJsonWebsocketConsumer):
             {
                 "type": "error",
                 "detail": "Этот WebSocket только для чтения. "
-                "Создание, изменение и удаление ставок выполняется через HTTP.",
+                "Создание и изменение ставок выполняется через HTTP.",
             }
         )
 
@@ -399,3 +370,6 @@ class ClosedAuctionBidsConsumer(AsyncJsonWebsocketConsumer):
                 **event["payload"],
             }
         )
+
+    async def auction_updated(self, event):
+        await self.send_json({"type": "auction_updated", **event["payload"]})

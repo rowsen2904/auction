@@ -1,10 +1,21 @@
+from __future__ import annotations
+
+from decimal import Decimal
+
+from django.conf import settings
 from rest_framework import serializers
 
 from .models import Deal, DealLog
 
 
+def _platform_rate() -> Decimal:
+    return Decimal(str(getattr(settings, "PLATFORM_COMMISSION_RATE", Decimal("0.40"))))
+
+
 class DealLogSerializer(serializers.ModelSerializer):
-    actor_email = serializers.CharField(source="actor.email", read_only=True, default=None)
+    actor_email = serializers.CharField(
+        source="actor.email", read_only=True, default=None
+    )
 
     class Meta:
         model = DealLog
@@ -19,6 +30,17 @@ class DealListSerializer(serializers.ModelSerializer):
     )
     auction_mode = serializers.CharField(source="auction.mode", read_only=True)
 
+    broker_commission_rate = serializers.DecimalField(
+        source="real_property.commission_rate",
+        max_digits=5,
+        decimal_places=2,
+        read_only=True,
+        allow_null=True,
+    )
+    broker_commission_amount = serializers.SerializerMethodField()
+    platform_commission_rate = serializers.SerializerMethodField()
+    platform_commission_amount = serializers.SerializerMethodField()
+
     class Meta:
         model = Deal
         fields = [
@@ -32,9 +54,14 @@ class DealListSerializer(serializers.ModelSerializer):
             "property_address",
             "auction_mode",
             "amount",
+            "lot_bid_amount",
             "status",
             "obligation_status",
             "document_deadline",
+            "broker_commission_rate",
+            "broker_commission_amount",
+            "platform_commission_rate",
+            "platform_commission_amount",
             "created_at",
             "updated_at",
         ]
@@ -47,19 +74,37 @@ class DealListSerializer(serializers.ModelSerializer):
         dev = getattr(obj.developer, "developer", None)
         if dev and dev.company_name:
             return dev.company_name
-        return f"{obj.developer.first_name} {obj.developer.last_name}".strip() or obj.developer.email
+        return (
+            f"{obj.developer.first_name} {obj.developer.last_name}".strip()
+            or obj.developer.email
+        )
+
+    def get_broker_commission_amount(self, obj):
+        rate = obj.real_property.commission_rate or Decimal("0.00")
+        return (obj.amount * rate / 100).quantize(Decimal("0.01"))
+
+    def get_platform_commission_rate(self, obj):
+        return _platform_rate()
+
+    def get_platform_commission_amount(self, obj):
+        rate = _platform_rate()
+        return (obj.amount * rate / 100).quantize(Decimal("0.01"))
 
 
 class DealDetailSerializer(DealListSerializer):
     ddu_document = serializers.SerializerMethodField()
     payment_proof_document = serializers.SerializerMethodField()
     logs = DealLogSerializer(many=True, read_only=True)
+
+    # backward compatibility
     commission_rate = serializers.DecimalField(
         source="real_property.commission_rate",
         max_digits=5,
         decimal_places=2,
         read_only=True,
+        allow_null=True,
     )
+
     property_price = serializers.DecimalField(
         source="real_property.price",
         max_digits=14,

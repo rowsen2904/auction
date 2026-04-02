@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import timedelta
 from decimal import Decimal
 
-from auctions.models import Auction, Bid
+from auctions.models import Auction, AuctionProperty, Bid
 from django.contrib.auth import get_user_model
 from django.urls import NoReverseMatch, reverse
 from django.utils import timezone
@@ -119,9 +119,9 @@ class AuctionTestMixin:
         if mode == Auction.Mode.CLOSED:
             min_bid_increment = None
 
-        return Auction.objects.create(
+        auction = Auction.objects.create(
             owner=owner,
-            real_property=prop,
+            real_property=prop if mode == Auction.Mode.OPEN else None,
             mode=mode,
             min_price=min_price,
             min_bid_increment=min_bid_increment,
@@ -130,6 +130,9 @@ class AuctionTestMixin:
             status=status_val,
             current_price=current_price,
         )
+
+        AuctionProperty.objects.create(auction=auction, property=prop)
+        return auction
 
     def create_bid(
         self,

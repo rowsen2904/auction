@@ -35,7 +35,7 @@ from rest_framework.response import Response
 def _broadcast_sealed_participants_changed(
     *,
     auction_id: int,
-    action: str,  # "joined" | "removed"
+    action: str,
     user_id: int,
     participants: list[int],
 ) -> None:
@@ -82,6 +82,19 @@ def _recalc_closed_auction_state(*, auction: Auction) -> dict:
         "highest_bid_id": auction.highest_bid_id,
         "updated_at": auction.updated_at.isoformat(),
     }
+
+
+def _extract_was_added(participant_result) -> bool:
+    if isinstance(participant_result, tuple) and len(participant_result) >= 2:
+        return bool(participant_result[1])
+
+    if isinstance(participant_result, list) and len(participant_result) >= 2:
+        return bool(participant_result[1])
+
+    if isinstance(participant_result, bool):
+        return participant_result
+
+    return False
 
 
 class ClosedBidCreateView(generics.CreateAPIView):
@@ -149,9 +162,7 @@ class ClosedBidCreateView(generics.CreateAPIView):
                 user_id=request.user.id,
                 end_date=auction.end_date,
             )
-            was_added = False
-            if isinstance(participant_result, tuple) and len(participant_result) == 2:
-                _, was_added = participant_result
+            was_added = _extract_was_added(participant_result)
 
             auction_patch = _recalc_closed_auction_state(auction=auction)
             bid_data = BidSerializer(bid).data
@@ -282,8 +293,10 @@ class MyClosedBidUpdateView(generics.GenericAPIView):
             ensure_mode(
                 ctx,
                 allowed={Auction.Mode.CLOSED},
-                message="Удаление ставок по протоколу HTTP "
-                "разрешено только для закрытых аукционов.",
+                message=_(
+                    "Удаление ставок по протоколу HTTP "
+                    "разрешено только для закрытых аукционов."
+                ),
             )
             ensure_active_window(ctx)
             ensure_not_owner(ctx)
@@ -302,19 +315,16 @@ class MyClosedBidUpdateView(generics.GenericAPIView):
                 is_sealed=True,
             )
 
-            bid_data = BidSerializer(bid).data
-
-            before_count = auction_participants.participants_count(
-                auction_id=auction.id
-            )
+            deleted_bid_id = bid.id
             bid.delete()
-            after_count = auction_participants.remove_participant(
+
+            auction_patch = _recalc_closed_auction_state(auction=auction)
+
+            auction_participants.participants_count(auction_id=auction.id)
+            auction_participants.remove_participant(
                 auction_id=auction.id,
                 user_id=request.user.id,
             )
-            was_removed = after_count < before_count
-
-            auction_patch = _recalc_closed_auction_state(auction=auction)
             participants = auction_participants.list_participants(auction_id=auction.id)
 
             def _after_commit():
@@ -322,15 +332,14 @@ class MyClosedBidUpdateView(generics.GenericAPIView):
                     auction_id=auction.id,
                     action="deleted",
                     auction_payload=auction_patch,
-                    bid_payload=bid_data,
+                    bid_payload={"id": deleted_bid_id},
                 )
-                if was_removed:
-                    _broadcast_sealed_participants_changed(
-                        auction_id=auction.id,
-                        action="removed",
-                        user_id=request.user.id,
-                        participants=participants,
-                    )
+                _broadcast_sealed_participants_changed(
+                    auction_id=auction.id,
+                    action="left",
+                    user_id=request.user.id,
+                    participants=participants,
+                )
 
             transaction.on_commit(_after_commit)
 

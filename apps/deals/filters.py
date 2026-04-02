@@ -9,7 +9,17 @@ class DealFilter(django_filters.FilterSet):
         choices=Deal.ObligationStatus.choices
     )
     auction_id = django_filters.NumberFilter(field_name="auction_id")
+    real_property_id = django_filters.NumberFilter(field_name="real_property_id")
+    broker_id = django_filters.NumberFilter(field_name="broker_id")
+    developer_id = django_filters.NumberFilter(field_name="developer_id")
 
     class Meta:
         model = Deal
-        fields = ["status", "obligation_status", "auction_id"]
+        fields = [
+            "status",
+            "obligation_status",
+            "auction_id",
+            "real_property_id",
+            "broker_id",
+            "developer_id",
+        ]

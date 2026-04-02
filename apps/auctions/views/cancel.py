@@ -17,13 +17,22 @@ class AuctionCancelView(generics.DestroyAPIView):
     http_method_names = ["delete", "head", "options"]
 
     def get_queryset(self):
-        return Auction.objects.exclude(
-            Q(status=Auction.Status.CANCELLED) | Q(status=Auction.Status.FINISHED)
+        return (
+            Auction.objects.exclude(
+                Q(status=Auction.Status.CANCELLED) | Q(status=Auction.Status.FINISHED)
+            )
+            .select_related("owner", "real_property")
+            .prefetch_related("properties")
         )
 
     def perform_destroy(self, instance: Auction) -> None:
         with transaction.atomic():
-            auction = Auction.objects.select_for_update().get(pk=instance.pk)
+            auction = (
+                Auction.objects.select_for_update()
+                .select_related("owner", "real_property")
+                .prefetch_related("properties")
+                .get(pk=instance.pk)
+            )
 
             ensure_can_cancel(auction=auction, user=self.request.user)
 

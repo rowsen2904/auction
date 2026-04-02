@@ -1,7 +1,7 @@
 from auctions.models import Auction
 from auctions.permissions import IsDeveloper
 from django.db import IntegrityError, transaction
-from django.db.models import Prefetch
+from django.db.models import Prefetch, Q
 from django.shortcuts import get_object_or_404
 from django.utils.translation import gettext_lazy as _
 from rest_framework import generics, status
@@ -36,11 +36,21 @@ from .serializers import (
     PropertyListSerializer,
     PropertyUpdateSerializer,
 )
+from .services.compatibility import (
+    BLOCKING_AUCTION_STATUSES,
+    compatible_properties_qs,
+)
 
-AUCTIONS_PREFETCH = Prefetch(
-    "auctions",
+OPEN_AUCTIONS_PREFETCH = Prefetch(
+    "open_auctions",
     queryset=Auction.objects.only("id", "real_property_id", "status"),
-    to_attr="prefetched_auctions",
+    to_attr="prefetched_open_auctions",
+)
+
+LOT_AUCTIONS_PREFETCH = Prefetch(
+    "lot_auctions",
+    queryset=Auction.objects.only("id", "status"),
+    to_attr="prefetched_lot_auctions",
 )
 
 
@@ -53,7 +63,11 @@ class PropertyListCreateView(generics.ListCreateAPIView):
     def get_queryset(self):
         return (
             Property.objects.select_related("owner")
-            .prefetch_related("images", AUCTIONS_PREFETCH)
+            .prefetch_related(
+                "images",
+                OPEN_AUCTIONS_PREFETCH,
+                LOT_AUCTIONS_PREFETCH,
+            )
             .filter(
                 moderation_status=Property.ModerationStatuses.APPROVED,
                 status__in=[
@@ -74,7 +88,6 @@ class PropertyListCreateView(generics.ListCreateAPIView):
         return PropertyListSerializer
 
     def perform_create(self, serializer):
-        # Set owner from request.user
         serializer.save(owner=self.request.user)
 
     @properties_list_schema
@@ -97,7 +110,11 @@ class MyPropertiesView(generics.ListAPIView):
     def get_queryset(self):
         return (
             Property.objects.select_related("owner")
-            .prefetch_related("images", AUCTIONS_PREFETCH)
+            .prefetch_related(
+                "images",
+                OPEN_AUCTIONS_PREFETCH,
+                LOT_AUCTIONS_PREFETCH,
+            )
             .filter(owner=self.request.user)
         )
 
@@ -108,12 +125,14 @@ class MyPropertiesView(generics.ListAPIView):
 
 class PropertyDetailView(generics.RetrieveUpdateAPIView):
     queryset = Property.objects.select_related("owner").prefetch_related(
-        "images", AUCTIONS_PREFETCH
+        "images",
+        OPEN_AUCTIONS_PREFETCH,
+        LOT_AUCTIONS_PREFETCH,
     )
     http_method_names = ["get", "patch", "head", "options"]
 
     def get_permissions(self):
-        if self.request.method in ("PATCH",):
+        if self.request.method == "PATCH":
             return [IsAuthenticated(), IsDeveloper(), IsPropertyOwner()]
         return [AllowAny()]
 
@@ -133,18 +152,19 @@ class PropertyDetailView(generics.RetrieveUpdateAPIView):
     def perform_update(self, serializer):
         prop = serializer.instance
 
-        has_blocking_auction = Auction.objects.filter(
+        has_blocking_open_auction = Auction.objects.filter(
             real_property=prop,
-            status__in=[
-                Auction.Status.SCHEDULED,
-                Auction.Status.ACTIVE,
-                Auction.Status.FINISHED,
-            ],
+            status__in=BLOCKING_AUCTION_STATUSES,
         ).exists()
 
-        if has_blocking_auction:
+        has_blocking_lot_auction = Auction.objects.filter(
+            properties=prop,
+            status__in=BLOCKING_AUCTION_STATUSES,
+        ).exists()
+
+        if has_blocking_open_auction or has_blocking_lot_auction:
             raise ValidationError(
-                {"detail": "Нельзя редактировать объект, который стоит на аукционе."}
+                {"detail": "Нельзя редактировать объект, связанный с аукционом."}
             )
 
         serializer.save()
@@ -166,7 +186,7 @@ class PropertyDeleteView(generics.DestroyAPIView):
     def perform_destroy(self, instance: Property) -> None:
         with transaction.atomic():
             prop: Property = get_object_or_404(
-                Property.objects.select_for_update().only("id", "owner_id"),
+                Property.objects.select_for_update().only("id", "owner_id", "status"),
                 pk=instance.pk,
             )
 
@@ -175,21 +195,21 @@ class PropertyDeleteView(generics.DestroyAPIView):
                     {"error": _("Проданное имущество удалить нельзя.")}
                 )
 
-            has_running_auction = Auction.objects.filter(
+            has_running_open_auction = Auction.objects.filter(
                 real_property_id=prop.id,
-                status__in=[
-                    Auction.Status.SCHEDULED,
-                    Auction.Status.ACTIVE,
-                    Auction.Status.FINISHED,
-                ],
+                status__in=BLOCKING_AUCTION_STATUSES,
             ).exists()
 
-            if has_running_auction:
+            has_running_lot_auction = Auction.objects.filter(
+                properties=prop,
+                status__in=BLOCKING_AUCTION_STATUSES,
+            ).exists()
+
+            if has_running_open_auction or has_running_lot_auction:
                 raise ValidationError(
                     {
                         "error": _(
-                            "Объект недвижимости нельзя удалить, "
-                            "пока он связан с активным аукционом."
+                            "Объект недвижимости нельзя удалить, пока он связан с аукционом."
                         )
                     }
                 )
@@ -211,11 +231,10 @@ class PropertyImageListCreateView(generics.GenericAPIView):
         return [AllowAny()]
 
     def get_property(self) -> Property:
-        prop = get_object_or_404(
+        return get_object_or_404(
             Property.objects.select_related("owner"),
             id=self.kwargs["pk"],
         )
-        return prop
 
     @property_images_list_schema
     def get(self, request, *args, **kwargs):
@@ -228,7 +247,6 @@ class PropertyImageListCreateView(generics.GenericAPIView):
     def post(self, request, *args, **kwargs):
         prop = self.get_property()
 
-        # Object-level permission: only owner can upload
         if prop.owner_id != request.user.id:
             return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
 
@@ -242,7 +260,6 @@ class PropertyImageListCreateView(generics.GenericAPIView):
         try:
             with transaction.atomic():
                 if is_primary:
-                    # Ensure only one primary per property
                     PropertyImage.objects.filter(property=prop, is_primary=True).update(
                         is_primary=False
                     )
@@ -256,7 +273,6 @@ class PropertyImageListCreateView(generics.GenericAPIView):
                 )
 
         except IntegrityError:
-            # Unique sort_order / one primary per property constraints
             return Response(
                 {"error": "Ошибка ограничения. Проверьте sort_order / is_primary."},
                 status=status.HTTP_400_BAD_REQUEST,
@@ -346,7 +362,6 @@ class PropertyImageUpdateView(generics.GenericAPIView):
             )
 
             was_primary = image.is_primary
-
             image.delete()
 
             if was_primary:
@@ -377,12 +392,40 @@ class MyAvailablePropertiesView(generics.ListAPIView):
                 owner=self.request.user,
                 moderation_status=Property.ModerationStatuses.APPROVED,
                 status=Property.PropertyStatuses.PUBLISHED,
-                auctions__isnull=True,
             )
-            .only("id", "address", "area", "created_at")
+            .exclude(
+                Q(open_auctions__status__in=BLOCKING_AUCTION_STATUSES)
+                | Q(lot_auctions__status__in=BLOCKING_AUCTION_STATUSES)
+            )
+            .only(
+                "id",
+                "address",
+                "area",
+                "created_at",
+            )
             .order_by(*self.ordering)
+            .distinct()
         )
 
     @my_available_properties_list_schema
     def get(self, request, *args, **kwargs):
         return super().get(request, *args, **kwargs)
+
+
+class CompatiblePropertiesView(generics.ListAPIView):
+    pagination_class = PropertyPagination
+    permission_classes = [IsAuthenticated, IsDeveloper]
+    serializer_class = MyAvailablePropertySerializer
+    ordering_fields = ["created_at", "address", "area"]
+    ordering = ["-created_at"]
+
+    def get_queryset(self):
+        reference_id = self.request.query_params.get("reference_id")
+        if not reference_id:
+            raise ValidationError({"reference_id": "Это поле обязательно."})
+
+        _, qs = compatible_properties_qs(
+            user=self.request.user,
+            reference_id=reference_id,
+        )
+        return qs

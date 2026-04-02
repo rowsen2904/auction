@@ -15,7 +15,7 @@ def sealed_bids_group_name(auction_id: int) -> str:
 def broadcast_sealed_bid_changed(
     *,
     auction_id: int,
-    action: str,  # "created" | "updated" | "deleted"
+    action: str,
     auction_payload: dict,
     bid_payload: dict,
 ) -> None:
@@ -39,7 +39,7 @@ def broadcast_sealed_bid_changed(
 def broadcast_sealed_participants_changed(
     *,
     auction_id: int,
-    action: str,  # "joined" | "removed"
+    action: str,
     user_id: int,
     participants: list[int],
 ) -> None:
@@ -66,8 +66,14 @@ def broadcast_auction_status(*, auction_id: int, payload: dict) -> None:
     channel_layer = get_channel_layer()
     if not channel_layer:
         return
+
     async_to_sync(channel_layer.group_send)(
         auction_group_name(auction_id),
+        {"type": "auction_updated", "payload": payload},
+    )
+
+    async_to_sync(channel_layer.group_send)(
+        sealed_bids_group_name(auction_id),
         {"type": "auction_updated", "payload": payload},
     )
 

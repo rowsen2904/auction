@@ -1,5 +1,3 @@
-# apps/properties/models.py
-
 from __future__ import annotations
 
 from decimal import Decimal
@@ -45,6 +43,13 @@ class Property(models.Model):
         APPROVED = "approved", _("Approved")
         REJECTED = "rejected", _("Rejected")
 
+    reference_id = models.UUIDField(
+        default=uuid4,
+        unique=True,
+        editable=False,
+        db_index=True,
+    )
+
     owner = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.PROTECT,
@@ -60,6 +65,29 @@ class Property(models.Model):
     )
 
     address = models.CharField(_("Адрес"), max_length=255, unique=True)
+
+    project = models.CharField(
+        _("Проект"),
+        max_length=255,
+        null=True,
+        blank=True,
+        db_index=True,
+    )
+
+    rooms = models.PositiveSmallIntegerField(
+        _("Комнат"),
+        null=True,
+        blank=True,
+        db_index=True,
+    )
+
+    purpose = models.CharField(
+        _("Назначение"),
+        max_length=255,
+        null=True,
+        blank=True,
+        db_index=True,
+    )
 
     area = models.DecimalField(
         _("Площадь"),
@@ -98,6 +126,13 @@ class Property(models.Model):
 
     deadline = models.DateField(_("Дедлайн"), null=True, blank=True, db_index=True)
 
+    delivery_date = models.DateField(
+        _("Дата сдачи"),
+        null=True,
+        blank=True,
+        db_index=True,
+    )
+
     status = models.CharField(
         _("Статус"),
         max_length=16,
@@ -133,6 +168,7 @@ class Property(models.Model):
             models.Index(
                 fields=["status", "-created_at"], name="prop_status_created_idx"
             ),
+            models.Index(fields=["reference_id"], name="prop_reference_id_idx"),
         ]
         constraints = [
             models.CheckConstraint(check=Q(area__gt=0), name="prop_area_gt_0"),
@@ -216,13 +252,11 @@ class PropertyImage(models.Model):
                 fields=["property", "sort_order"],
                 name="pimg_unique_sort_per_property",
             ),
-            # Only ONE primary image per property
             models.UniqueConstraint(
                 fields=["property"],
                 condition=Q(is_primary=True),
                 name="pimg_one_primary_per_property",
             ),
-            # Require either image OR external_url (but not both empty)
             models.CheckConstraint(
                 check=Q(image__isnull=False) | Q(external_url__isnull=False),
                 name="pimg_requires_image_or_url",

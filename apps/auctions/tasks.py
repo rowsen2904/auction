@@ -1,4 +1,3 @@
-# apps/auctions/tasks.py
 from __future__ import annotations
 
 import json
@@ -65,10 +64,10 @@ def activate_auction(self, auction_id: int) -> None:
 
         if now >= auction.end_date:
             auction.status = Auction.Status.FINISHED
-            auction.save(update_fields=["status", "updated_at"])
         else:
             auction.status = Auction.Status.ACTIVE
-            auction.save(update_fields=["status", "updated_at"])
+
+        auction.save(update_fields=["status", "updated_at"])
 
         broadcast_auction_status(
             auction_id=auction.id,
@@ -87,7 +86,17 @@ def finish_auction(self, auction_id: int) -> None:
     with transaction.atomic():
         auction = (
             Auction.objects.select_for_update()
-            .only("id", "mode", "status", "highest_bid_id", "winner_bid_id", "end_date", "real_property_id", "owner_id")
+            .select_related("real_property")
+            .only(
+                "id",
+                "mode",
+                "status",
+                "highest_bid_id",
+                "winner_bid_id",
+                "end_date",
+                "real_property_id",
+                "owner_id",
+            )
             .filter(id=auction_id)
             .first()
         )
@@ -107,12 +116,20 @@ def finish_auction(self, auction_id: int) -> None:
         auction.status = Auction.Status.FINISHED
         auction.save(update_fields=["winner_bid_id", "status", "updated_at"])
 
-        # OPEN auction: auto-create deal if winner exists
-        if auction.mode == Auction.Mode.OPEN and auction.winner_bid_id:
+        # OPEN: auto-create deal if winner exists
+        if (
+            auction.mode == Auction.Mode.OPEN
+            and auction.winner_bid_id
+            and auction.real_property_id
+        ):
             from deals.services import create_deal_from_bid
 
             bid = Bid.objects.get(id=auction.winner_bid_id)
-            create_deal_from_bid(auction=auction, bid=bid)
+            create_deal_from_bid(
+                auction=auction,
+                bid=bid,
+                real_property=auction.real_property,
+            )
 
         broadcast_auction_status(
             auction_id=auction.id,

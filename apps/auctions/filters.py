@@ -1,3 +1,4 @@
+from django.db.models import Q
 from django.utils import timezone
 from django_filters import rest_framework as filters
 
@@ -8,9 +9,11 @@ class AuctionFilter(filters.FilterSet):
     mode = filters.ChoiceFilter(choices=Auction.Mode.choices)
     status = filters.ChoiceFilter(choices=Auction.Status.choices)
 
-    property_id = filters.NumberFilter(field_name="real_property_id")
+    property_id = filters.NumberFilter(method="filter_property")
+    propertyId = filters.NumberFilter(method="filter_property")
 
     owner_id = filters.NumberFilter(field_name="owner_id")
+    ownerId = filters.NumberFilter(field_name="owner_id")
 
     active = filters.BooleanFilter(method="filter_active")
 
@@ -28,13 +31,18 @@ class AuctionFilter(filters.FilterSet):
             "mode",
             "status",
             "property_id",
+            "propertyId",
             "owner_id",
+            "ownerId",
             "active",
             "ends_before",
             "ends_after",
             "starts_before",
             "starts_after",
         ]
+
+    def filter_property(self, qs, name, value):
+        return qs.filter(Q(real_property_id=value) | Q(properties__id=value)).distinct()
 
     def filter_active(self, qs, name, value):
         if not value:

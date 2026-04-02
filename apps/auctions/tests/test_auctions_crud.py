@@ -27,7 +27,7 @@ class TestAuctionsCRUD(APITestCase, AuctionTestMixin):
         resp = self.client.post(
             self.BASE,
             data={
-                "property_id": self.prop1.id,
+                "propertyId": self.prop1.id,
                 "mode": Auction.Mode.OPEN,
                 "min_price": "1000.00",
                 "min_bid_increment": "150000.00",
@@ -44,7 +44,7 @@ class TestAuctionsCRUD(APITestCase, AuctionTestMixin):
         resp = self.client.post(
             self.BASE,
             data={
-                "property_id": self.prop1.id,
+                "propertyId": self.prop1.id,
                 "mode": Auction.Mode.OPEN,
                 "min_price": "1000.00",
                 "min_bid_increment": "150000.00",
@@ -61,7 +61,7 @@ class TestAuctionsCRUD(APITestCase, AuctionTestMixin):
         resp = self.client.post(
             self.BASE,
             data={
-                "property_id": self.prop1.id,  # belongs to dev1
+                "propertyId": self.prop1.id,  # belongs to dev1
                 "mode": Auction.Mode.OPEN,
                 "min_price": "1000.00",
                 "min_bid_increment": "150000.00",
@@ -71,6 +71,7 @@ class TestAuctionsCRUD(APITestCase, AuctionTestMixin):
             format="json",
         )
         self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("propertyIds", resp.data)
 
     def test_detail_open_bids_public(self):
         now = timezone.now()
@@ -149,7 +150,7 @@ class TestAuctionsCRUD(APITestCase, AuctionTestMixin):
             resp = self.client.post(
                 self.BASE,
                 data={
-                    "property_id": self.prop1.id,
+                    "propertyId": self.prop1.id,
                     "mode": Auction.Mode.OPEN,
                     "min_price": "1000.00",
                     "min_bid_increment": "150000.00",
@@ -181,7 +182,7 @@ class TestAuctionsCRUD(APITestCase, AuctionTestMixin):
         resp = self.client.post(
             self.BASE,
             data={
-                "property_id": self.prop1.id,
+                "propertyId": self.prop1.id,
                 "mode": Auction.Mode.OPEN,
                 "min_price": "1000.00",
                 "min_bid_increment": "150000.00",
@@ -192,8 +193,8 @@ class TestAuctionsCRUD(APITestCase, AuctionTestMixin):
         )
 
         self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("real_property", resp.data)
-        self.assertIn("одобрен", resp.data["real_property"][0].lower())
+        self.assertIn("propertyIds", resp.data)
+        self.assertIn("не одобрена", resp.data["propertyIds"][0].lower())
 
         schedule_mock.assert_not_called()
 
@@ -206,7 +207,7 @@ class TestAuctionsCRUD(APITestCase, AuctionTestMixin):
             first_resp = self.client.post(
                 self.BASE,
                 data={
-                    "property_id": self.prop1.id,
+                    "propertyId": self.prop1.id,
                     "mode": Auction.Mode.OPEN,
                     "min_price": "1000.00",
                     "min_bid_increment": "150000.00",
@@ -221,7 +222,7 @@ class TestAuctionsCRUD(APITestCase, AuctionTestMixin):
         second_resp = self.client.post(
             self.BASE,
             data={
-                "property_id": self.prop1.id,
+                "propertyId": self.prop1.id,
                 "mode": Auction.Mode.CLOSED,
                 "min_price": "2000.00",
                 "start_date": (now + timedelta(days=2)).isoformat(),
@@ -231,8 +232,8 @@ class TestAuctionsCRUD(APITestCase, AuctionTestMixin):
         )
 
         self.assertEqual(second_resp.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("real_property", second_resp.data)
-        self.assertIn("уже создан", second_resp.data["real_property"][0].lower())
+        self.assertIn("propertyIds", second_resp.data)
+        self.assertIn("связаны с аукционом", second_resp.data["propertyIds"][0].lower())
         self.assertEqual(
             Auction.objects.filter(real_property_id=self.prop1.id).count(),
             1,

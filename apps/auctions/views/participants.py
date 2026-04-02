@@ -77,6 +77,9 @@ class AuctionParticipantsView(APIView):
 
         participants = list_participants(auction_id=auction.id)
         return Response(
-            {"auction_id": auction.id, "participants": participants},
+            {
+                "auction_id": auction.id,
+                "participants": participants,
+            },
             status=status.HTTP_200_OK,
         )

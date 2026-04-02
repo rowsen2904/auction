@@ -13,6 +13,11 @@ urlpatterns = [
     ),
     path("<int:pk>/comment/", views.BrokerCommentView.as_view(), name="deal-comment"),
     path(
+        "<int:pk>/submit-for-review/",
+        views.SubmitForReviewView.as_view(),
+        name="deal-submit-for-review",
+    ),
+    path(
         "<int:pk>/admin-approve/",
         views.AdminApproveView.as_view(),
         name="deal-admin-approve",
@@ -21,16 +26,6 @@ urlpatterns = [
         "<int:pk>/admin-reject/",
         views.AdminRejectView.as_view(),
         name="deal-admin-reject",
-    ),
-    path(
-        "<int:pk>/developer-confirm/",
-        views.DeveloperConfirmView.as_view(),
-        name="deal-developer-confirm",
-    ),
-    path(
-        "<int:pk>/developer-reject/",
-        views.DeveloperRejectView.as_view(),
-        name="deal-developer-reject",
     ),
     path("<int:pk>/logs/", views.DealLogsView.as_view(), name="deal-logs"),
 ]

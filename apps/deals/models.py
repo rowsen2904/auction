@@ -33,11 +33,14 @@ class Deal(models.Model):
         on_delete=models.PROTECT,
         related_name="deals",
     )
-    bid = models.OneToOneField(
+
+    # changed: one bid can now create many deals (closed lot split)
+    bid = models.ForeignKey(
         "auctions.Bid",
         on_delete=models.PROTECT,
-        related_name="deal",
+        related_name="deals",
     )
+
     broker = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.PROTECT,
@@ -53,10 +56,22 @@ class Deal(models.Model):
         on_delete=models.PROTECT,
         related_name="deals",
     )
+
+    # OPEN: winning bid amount
+    # CLOSED: property price (per object deal amount)
     amount = models.DecimalField(
-        _("Сумма ставки"),
+        _("Сумма сделки"),
         max_digits=14,
         decimal_places=2,
+    )
+
+    # original lot bid amount, useful for closed lots
+    lot_bid_amount = models.DecimalField(
+        _("Ставка по лоту"),
+        max_digits=14,
+        decimal_places=2,
+        null=True,
+        blank=True,
     )
 
     status = models.CharField(
@@ -74,7 +89,6 @@ class Deal(models.Model):
         db_index=True,
     )
 
-    # Documents
     ddu_document = models.FileField(
         _("ДДУ"),
         upload_to=deal_document_upload_to,
@@ -93,7 +107,6 @@ class Deal(models.Model):
         default="",
     )
 
-    # Rejection reasons (preserved across cycles)
     admin_rejection_reason = models.TextField(
         _("Причина отклонения (админ)"),
         blank=True,
@@ -105,7 +118,6 @@ class Deal(models.Model):
         default="",
     )
 
-    # Deadline
     document_deadline = models.DateTimeField(
         _("Дедлайн загрузки документов"),
         db_index=True,
@@ -132,11 +144,21 @@ class Deal(models.Model):
                 fields=["obligation_status", "document_deadline"],
                 name="deal_oblig_deadline_idx",
             ),
+            models.Index(fields=["auction", "real_property"], name="deal_auc_prop_idx"),
         ]
         constraints = [
             models.CheckConstraint(
                 check=Q(amount__gt=Decimal("0.00")),
                 name="deal_amount_gt_0",
+            ),
+            models.CheckConstraint(
+                check=Q(lot_bid_amount__isnull=True)
+                | Q(lot_bid_amount__gt=Decimal("0.00")),
+                name="deal_lot_bid_amount_gt_0_or_null",
+            ),
+            models.UniqueConstraint(
+                fields=["auction", "real_property"],
+                name="deal_unique_auction_property",
             ),
         ]
 

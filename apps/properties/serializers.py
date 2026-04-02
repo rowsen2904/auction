@@ -13,7 +13,6 @@ class PropertyImageSerializer(serializers.ModelSerializer):
         fields = ["id", "url", "external_url", "sort_order", "is_primary", "created_at"]
 
     def get_url(self, obj):
-        # Return absolute URL for ImageField if present
         if obj.external_url:
             return obj.external_url
         if not obj.image:
@@ -36,14 +35,19 @@ class PropertyListSerializer(serializers.ModelSerializer):
         model = Property
         fields = [
             "id",
+            "reference_id",
             "developer",
             "type",
+            "project",
+            "rooms",
+            "purpose",
             "address",
             "area",
             "property_class",
             "price",
             "commission_rate",
             "deadline",
+            "delivery_date",
             "status",
             "images",
             "created_at",
@@ -54,17 +58,47 @@ class PropertyListSerializer(serializers.ModelSerializer):
         ]
 
     def get_is_editable(self, obj):
-        auctions = getattr(obj, "prefetched_auctions", None)
-
-        if auctions is not None:
-            auction = auctions[0] if auctions else None
+        open_auctions = getattr(obj, "prefetched_open_auctions", None)
+        if open_auctions is None:
+            has_blocking_open_auction = obj.open_auctions.filter(
+                status__in=[
+                    Auction.Status.SCHEDULED,
+                    Auction.Status.ACTIVE,
+                    Auction.Status.FINISHED,
+                ]
+            ).exists()
         else:
-            auction = obj.auctions.only("status").first()
+            has_blocking_open_auction = any(
+                a.status
+                in {
+                    Auction.Status.SCHEDULED,
+                    Auction.Status.ACTIVE,
+                    Auction.Status.FINISHED,
+                }
+                for a in open_auctions
+            )
 
-        if auction is None:
-            return True
+        lot_auctions = getattr(obj, "prefetched_lot_auctions", None)
+        if lot_auctions is None:
+            has_blocking_lot_auction = obj.lot_auctions.filter(
+                status__in=[
+                    Auction.Status.SCHEDULED,
+                    Auction.Status.ACTIVE,
+                    Auction.Status.FINISHED,
+                ]
+            ).exists()
+        else:
+            has_blocking_lot_auction = any(
+                a.status
+                in {
+                    Auction.Status.SCHEDULED,
+                    Auction.Status.ACTIVE,
+                    Auction.Status.FINISHED,
+                }
+                for a in lot_auctions
+            )
 
-        return auction.status == Auction.Status.CANCELLED
+        return not (has_blocking_open_auction or has_blocking_lot_auction)
 
 
 class PropertyCreateSerializer(serializers.ModelSerializer):
@@ -73,21 +107,30 @@ class PropertyCreateSerializer(serializers.ModelSerializer):
         required=False,
         allow_null=True,
     )
+    project = serializers.CharField(required=False, allow_null=True, allow_blank=True)
+    rooms = serializers.IntegerField(required=False, allow_null=True, min_value=0)
+    purpose = serializers.CharField(required=False, allow_null=True, allow_blank=True)
+    delivery_date = serializers.DateField(required=False, allow_null=True)
 
     class Meta:
         model = Property
         fields = [
             "id",
+            "reference_id",
             "type",
+            "project",
+            "rooms",
+            "purpose",
             "address",
             "area",
             "property_class",
             "price",
             "commission_rate",
             "deadline",
+            "delivery_date",
             "status",
         ]
-        read_only_fields = ["id"]
+        read_only_fields = ["id", "reference_id"]
 
     def validate(self, attrs):
         property_type = attrs.get("type")
@@ -110,14 +153,22 @@ class PropertyUpdateSerializer(serializers.ModelSerializer):
         required=False,
         allow_null=True,
     )
+    project = serializers.CharField(required=False, allow_null=True, allow_blank=True)
+    rooms = serializers.IntegerField(required=False, allow_null=True, min_value=0)
+    purpose = serializers.CharField(required=False, allow_null=True, allow_blank=True)
+    delivery_date = serializers.DateField(required=False, allow_null=True)
 
     RESET_MODERATION_FIELDS = {
         "type",
+        "project",
+        "rooms",
+        "purpose",
         "address",
         "area",
         "property_class",
         "price",
         "deadline",
+        "delivery_date",
         "status",
     }
 
@@ -125,12 +176,16 @@ class PropertyUpdateSerializer(serializers.ModelSerializer):
         model = Property
         fields = [
             "type",
+            "project",
+            "rooms",
+            "purpose",
             "address",
             "area",
             "property_class",
             "price",
             "commission_rate",
             "deadline",
+            "delivery_date",
             "status",
         ]
 
@@ -181,7 +236,6 @@ class PropertyImageCreateSerializer(serializers.ModelSerializer):
         fields = ["image", "external_url", "sort_order", "is_primary"]
 
     def validate(self, attrs):
-        # Require at least one source: image or external_url
         if not attrs.get("image") and not attrs.get("external_url"):
             raise serializers.ValidationError(
                 {
