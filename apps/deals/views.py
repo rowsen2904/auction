@@ -20,6 +20,8 @@ from .schemas import (
     deal_admin_reject_schema,
     deal_broker_comment_schema,
     deal_detail_schema,
+    deal_developer_confirm_schema,
+    deal_developer_reject_schema,
     deal_list_schema,
     deal_logs_schema,
     deal_submit_for_review_schema,
@@ -230,32 +232,22 @@ class AdminApproveView(APIView):
                     {"detail": _("Одобрение возможно только в статусе «На проверке».")}
                 )
 
-            deal.status = Deal.Status.CONFIRMED
-            deal.obligation_status = Deal.ObligationStatus.FULFILLED
+            deal.status = Deal.Status.DEVELOPER_CONFIRM
             deal.admin_rejection_reason = ""
-            deal.developer_rejection_reason = ""
             deal.save(
                 update_fields=[
                     "status",
-                    "obligation_status",
                     "admin_rejection_reason",
-                    "developer_rejection_reason",
                     "updated_at",
                 ]
             )
-
-            if deal.real_property.status != Property.PropertyStatuses.SOLD:
-                deal.real_property.status = Property.PropertyStatuses.SOLD
-                deal.real_property.save(update_fields=["status", "updated_at"])
 
             DealLog.objects.create(
                 deal=deal,
                 action=DealLog.Action.ADMIN_APPROVED,
                 actor=request.user,
-                detail="Сделка подтверждена администратором.",
+                detail="Документы одобрены администратором. Ожидается подтверждение девелопера.",
             )
-
-            create_payments_for_deal(deal)
 
         from .tasks import send_deal_status_email
 
@@ -268,27 +260,16 @@ class AdminApproveView(APIView):
         send_deal_status_email.delay(
             deal.id,
             deal_obj.developer.email,
-            f"MIG Tender — Сделка #{deal.id} подтверждена администратором",
+            f"MIG Tender — Сделка #{deal.id} ожидает вашего подтверждения",
             (
-                f"Сделка #{deal.id} "
-                f"(объект «{deal_obj.real_property.address}») "
-                f"подтверждена администратором.\n"
-                f"По сделке автоматически созданы записи выплат."
-            ),
-        )
-        send_deal_status_email.delay(
-            deal.id,
-            deal_obj.broker.email,
-            f"MIG Tender — Сделка #{deal.id} подтверждена",
-            (
-                f"Сделка #{deal.id} по объекту "
-                f"«{deal_obj.real_property.address}» подтверждена администратором.\n"
-                f"Выплата комиссии будет обработана отдельно."
+                f"Администратор одобрил документы по сделке #{deal.id} "
+                f"(объект «{deal_obj.real_property.address}»).\n"
+                f"Пожалуйста, подтвердите сделку в личном кабинете."
             ),
         )
 
         return Response(
-            {"detail": "Сделка подтверждена. Выплаты созданы."},
+            {"detail": "Документы одобрены. Ожидается подтверждение девелопера."},
             status=status.HTTP_200_OK,
         )
 
@@ -335,6 +316,138 @@ class AdminRejectView(APIView):
                 f"(объект «{deal_obj.real_property.address}») "
                 f"отклонены.\nПричина: {reason}\n"
                 f"Пожалуйста, исправьте и повторно отправьте сделку на проверку."
+            ),
+        )
+
+        return Response(
+            {"detail": "Сделка отклонена. Брокер уведомлён."},
+            status=status.HTTP_200_OK,
+        )
+
+
+def _get_deal_for_developer(pk: int, user) -> Deal:
+    deal = get_object_or_404(
+        Deal.objects.select_for_update().select_related("real_property"), pk=pk
+    )
+    if deal.developer_id != user.id:
+        raise PermissionDenied(_("Вы не являетесь девелопером этой сделки."))
+    return deal
+
+
+class DeveloperConfirmView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    @deal_developer_confirm_schema
+    def post(self, request, pk: int):
+        with transaction.atomic():
+            deal = _get_deal_for_developer(pk, request.user)
+
+            if deal.status != Deal.Status.DEVELOPER_CONFIRM:
+                raise ValidationError(
+                    {
+                        "detail": _(
+                            "Подтверждение возможно только в статусе «Ожидает девелопера»."
+                        )
+                    }
+                )
+
+            deal.status = Deal.Status.CONFIRMED
+            deal.obligation_status = Deal.ObligationStatus.FULFILLED
+            deal.developer_rejection_reason = ""
+            deal.save(
+                update_fields=[
+                    "status",
+                    "obligation_status",
+                    "developer_rejection_reason",
+                    "updated_at",
+                ]
+            )
+
+            if deal.real_property.status != Property.PropertyStatuses.SOLD:
+                deal.real_property.status = Property.PropertyStatuses.SOLD
+                deal.real_property.save(update_fields=["status", "updated_at"])
+
+            DealLog.objects.create(
+                deal=deal,
+                action=DealLog.Action.DEVELOPER_CONFIRMED,
+                actor=request.user,
+                detail="Сделка подтверждена девелопером.",
+            )
+
+            create_payments_for_deal(deal)
+
+        from .tasks import send_deal_status_email
+
+        deal_obj = Deal.objects.select_related(
+            "broker",
+            "real_property",
+        ).get(id=deal.id)
+
+        send_deal_status_email.delay(
+            deal.id,
+            deal_obj.broker.email,
+            f"MIG Tender — Сделка #{deal.id} подтверждена девелопером",
+            (
+                f"Сделка #{deal.id} по объекту "
+                f"«{deal_obj.real_property.address}» подтверждена девелопером.\n"
+                f"Выплата комиссии будет обработана отдельно."
+            ),
+        )
+
+        return Response(
+            {"detail": "Сделка подтверждена. Выплаты созданы."},
+            status=status.HTTP_200_OK,
+        )
+
+
+class DeveloperRejectView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    @deal_developer_reject_schema
+    def post(self, request, pk: int):
+        ser = RejectReasonSerializer(data=request.data)
+        ser.is_valid(raise_exception=True)
+        reason = ser.validated_data["reason"]
+
+        with transaction.atomic():
+            deal = _get_deal_for_developer(pk, request.user)
+
+            if deal.status != Deal.Status.DEVELOPER_CONFIRM:
+                raise ValidationError(
+                    {
+                        "detail": _(
+                            "Отклонение возможно только в статусе «Ожидает девелопера»."
+                        )
+                    }
+                )
+
+            deal.status = Deal.Status.PENDING_DOCUMENTS
+            deal.developer_rejection_reason = reason
+            deal.save(
+                update_fields=["status", "developer_rejection_reason", "updated_at"]
+            )
+
+            DealLog.objects.create(
+                deal=deal,
+                action=DealLog.Action.DEVELOPER_REJECTED,
+                actor=request.user,
+                detail=f"Отклонено девелопером. Причина: {reason}",
+            )
+
+        from .tasks import send_deal_status_email
+
+        deal_obj = Deal.objects.select_related("broker", "real_property").get(
+            id=deal.id
+        )
+        send_deal_status_email.delay(
+            deal.id,
+            deal_obj.broker.email,
+            f"MIG Tender — Сделка #{deal.id} отклонена девелопером",
+            (
+                f"Сделка #{deal.id} по объекту "
+                f"«{deal_obj.real_property.address}» "
+                f"отклонена девелопером.\nПричина: {reason}\n"
+                f"Пожалуйста, исправьте документы и повторно отправьте на проверку."
             ),
         )
 

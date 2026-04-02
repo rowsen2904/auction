@@ -27,5 +27,15 @@ urlpatterns = [
         views.AdminRejectView.as_view(),
         name="deal-admin-reject",
     ),
+    path(
+        "<int:pk>/developer-confirm/",
+        views.DeveloperConfirmView.as_view(),
+        name="deal-developer-confirm",
+    ),
+    path(
+        "<int:pk>/developer-reject/",
+        views.DeveloperRejectView.as_view(),
+        name="deal-developer-reject",
+    ),
     path("<int:pk>/logs/", views.DealLogsView.as_view(), name="deal-logs"),
 ]

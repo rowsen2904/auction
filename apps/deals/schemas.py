@@ -128,11 +128,8 @@ Rules:
 - available only while deal status is admin_review
 
 Effect:
-- deal status changes to confirmed
-- obligation status changes to fulfilled
-- property status changes to sold
-- payment records are created automatically
-- broker and developer are notified
+- deal status changes to developer_confirm
+- developer is notified to confirm
 """
 
 ADMIN_REJECT_DOC = """
@@ -148,6 +145,88 @@ Effect:
 - admin rejection reason is saved
 - broker is notified
 """
+
+DEVELOPER_CONFIRM_DOC = """
+Confirm deal as developer.
+
+Rules:
+- developer of the deal only
+- available only while deal status is developer_confirm
+
+Effect:
+- deal status changes to confirmed
+- obligation status changes to fulfilled
+- property status changes to sold
+- payment records are created automatically
+- broker is notified
+"""
+
+DEVELOPER_REJECT_DOC = """
+Reject deal as developer.
+
+Rules:
+- developer of the deal only
+- available only while deal status is developer_confirm
+- rejection reason is required
+
+Effect:
+- deal status changes back to pending_documents
+- developer rejection reason is saved
+- broker is notified
+"""
+
+
+deal_developer_confirm_schema = extend_schema(
+    summary="Confirm deal as developer",
+    description=DEVELOPER_CONFIRM_DOC,
+    responses={
+        200: OpenApiResponse(
+            response=DetailMessageSerializer,
+            description="Deal confirmed and payments created.",
+        ),
+        400: OpenApiResponse(
+            response=DRFDetailErrorSerializer,
+            description="Validation error.",
+        ),
+        401: OpenApiResponse(
+            response=DRFDetailErrorSerializer,
+            description="Unauthorized.",
+        ),
+        403: OpenApiResponse(
+            response=DRFDetailErrorSerializer,
+            description="Forbidden (developer of this deal only).",
+        ),
+        404: OpenApiResponse(description="Deal not found."),
+    },
+    tags=["Deal Workflow"],
+)
+
+deal_developer_reject_schema = extend_schema(
+    summary="Reject deal as developer",
+    description=DEVELOPER_REJECT_DOC,
+    request=RejectReasonSerializer,
+    responses={
+        200: OpenApiResponse(
+            response=DetailMessageSerializer,
+            description="Deal rejected and broker notified.",
+        ),
+        400: OpenApiResponse(
+            response=DRFDetailErrorSerializer,
+            description="Validation error.",
+        ),
+        401: OpenApiResponse(
+            response=DRFDetailErrorSerializer,
+            description="Unauthorized.",
+        ),
+        403: OpenApiResponse(
+            response=DRFDetailErrorSerializer,
+            description="Forbidden (developer of this deal only).",
+        ),
+        404: OpenApiResponse(description="Deal not found."),
+    },
+    tags=["Deal Workflow"],
+)
+
 
 DEAL_LOGS_DOC = """
 List logs for a deal.

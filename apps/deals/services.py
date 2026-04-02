@@ -74,7 +74,7 @@ def create_payments_for_deal(deal: Deal) -> None:
         broker_amount = (deal.amount * broker_rate / 100).quantize(Decimal("0.01"))
         Payment.objects.get_or_create(
             deal=deal,
-            type=Payment.Type.BROKER_COMMISSION,
+            type=Payment.Type.DEVELOPER_COMMISSION,
             defaults={
                 "amount": broker_amount,
                 "rate": broker_rate,
