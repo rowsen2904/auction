@@ -30,6 +30,9 @@ class DealListSerializer(serializers.ModelSerializer):
     )
     auction_mode = serializers.CharField(source="auction.mode", read_only=True)
 
+    has_ddu = serializers.SerializerMethodField()
+    has_payment_proof = serializers.SerializerMethodField()
+
     broker_commission_rate = serializers.DecimalField(
         source="real_property.commission_rate",
         max_digits=5,
@@ -58,6 +61,8 @@ class DealListSerializer(serializers.ModelSerializer):
             "status",
             "obligation_status",
             "document_deadline",
+            "has_ddu",
+            "has_payment_proof",
             "broker_commission_rate",
             "broker_commission_amount",
             "platform_commission_rate",
@@ -78,6 +83,12 @@ class DealListSerializer(serializers.ModelSerializer):
             f"{obj.developer.first_name} {obj.developer.last_name}".strip()
             or obj.developer.email
         )
+
+    def get_has_ddu(self, obj):
+        return bool(obj.ddu_document)
+
+    def get_has_payment_proof(self, obj):
+        return bool(obj.payment_proof_document)
 
     def get_broker_commission_amount(self, obj):
         rate = obj.real_property.commission_rate or Decimal("0.00")
