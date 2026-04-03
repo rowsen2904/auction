@@ -86,7 +86,6 @@ def finish_auction(self, auction_id: int) -> None:
     with transaction.atomic():
         auction = (
             Auction.objects.select_for_update()
-            .select_related("real_property")
             .only(
                 "id",
                 "mode",
