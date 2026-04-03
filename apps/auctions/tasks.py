@@ -117,19 +117,21 @@ def finish_auction(self, auction_id: int) -> None:
         auction.save(update_fields=["winner_bid_id", "status", "updated_at"])
 
         # OPEN: auto-create deal if winner exists
-        if (
-            auction.mode == Auction.Mode.OPEN
-            and auction.winner_bid_id
-            and auction.real_property_id
-        ):
+        if auction.mode == Auction.Mode.OPEN and auction.winner_bid_id:
             from deals.services import create_deal_from_bid
 
-            bid = Bid.objects.get(id=auction.winner_bid_id)
-            create_deal_from_bid(
-                auction=auction,
-                bid=bid,
-                real_property=auction.real_property,
-            )
+            # real_property may be null for older auctions — fallback to M2M
+            prop = auction.real_property
+            if prop is None:
+                prop = auction.properties.order_by("id").first()
+
+            if prop is not None:
+                bid = Bid.objects.get(id=auction.winner_bid_id)
+                create_deal_from_bid(
+                    auction=auction,
+                    bid=bid,
+                    real_property=prop,
+                )
 
         broadcast_auction_status(
             auction_id=auction.id,
