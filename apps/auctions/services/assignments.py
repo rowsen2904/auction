@@ -57,6 +57,11 @@ def select_closed_auction_winners(
                 real_property=lot_properties[0],
             )
 
+        # Set winner_bid on auction when single winner selected
+        if len(bids) == 1:
+            auction.winner_bid = bids[0]
+            auction.save(update_fields=["winner_bid_id"])
+
     return bids
 
 
