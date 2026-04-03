@@ -120,8 +120,12 @@ def finish_auction(self, auction_id: int) -> None:
         if auction.mode == Auction.Mode.OPEN and auction.winner_bid_id:
             from deals.services import create_deal_from_bid
 
-            # real_property may be null for older auctions — fallback to M2M
-            prop = auction.real_property
+            # Fetch full property (select_related+only may not load all fields)
+            from properties.models import Property
+
+            prop = None
+            if auction.real_property_id:
+                prop = Property.objects.filter(id=auction.real_property_id).first()
             if prop is None:
                 prop = auction.properties.order_by("id").first()
 
