@@ -87,6 +87,7 @@ class AuctionListSerializer(serializers.ModelSerializer):
         decimal_places=2,
         read_only=True,
     )
+    deals_created = serializers.SerializerMethodField()
 
     class Meta:
         model = Auction
@@ -106,9 +107,14 @@ class AuctionListSerializer(serializers.ModelSerializer):
             "highest_bid_id",
             "winner_bid",
             "lot_total_price",
+            "deals_created",
             "created_at",
             "updated_at",
         ]
+
+    def get_deals_created(self, obj):
+        from deals.models import Deal
+        return Deal.objects.filter(auction_id=obj.id).exists()
 
 
 class AuctionCreateSerializer(serializers.ModelSerializer):
