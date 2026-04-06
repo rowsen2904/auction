@@ -316,5 +316,5 @@ AUCTION_CANCEL_LOCK_BEFORE_START = timedelta(minutes=10)
 # Deals & Payments
 from decimal import Decimal as _Decimal  # noqa: E402
 
-PLATFORM_COMMISSION_RATE = _Decimal("0.80")  # 0.8%
+PLATFORM_COMMISSION_RATE = _Decimal("0.40")  # 0.4%
 DEAL_DOCUMENT_DEADLINE_DAYS = 7
