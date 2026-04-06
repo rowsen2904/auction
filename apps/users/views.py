@@ -1,5 +1,6 @@
 from django.contrib.auth import get_user_model
 from django.db import IntegrityError, transaction
+from django.db.models import Q
 from django.utils.translation import gettext_lazy as _
 from drf_spectacular.utils import extend_schema
 from rest_framework import generics, status
@@ -10,6 +11,8 @@ from rest_framework.views import APIView
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
 from helpers.utils import get_client_ip
+
+from deals.models import Deal
 
 from .models import Broker, Developer, UserDocument
 from .schemas import (
@@ -29,6 +32,7 @@ from .serializers import (
     RegisterBrokerSerializer,
     RegisterDeveloperSerializer,
     RegisterResponseSerializer,
+    UnifiedDocumentSerializer,
     UserDocumentDeleteSerializer,
     UserDocumentNameUpdateSerializer,
     UserDocumentSerializer,
@@ -351,3 +355,91 @@ class UserDocumentDeleteView(generics.GenericAPIView):
             {"message": _("Документ успешно удалён.")},
             status=status.HTTP_200_OK,
         )
+
+
+class AllDocumentsView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        summary="Get all user documents (personal + deal)",
+        tags=["Auth"],
+        responses={200: UnifiedDocumentSerializer(many=True)},
+    )
+    def get(self, request, *args, **kwargs):
+        user = request.user
+        results = []
+
+        # 1) Personal documents (UserDocument)
+        for doc in UserDocument.objects.filter(user=user).order_by("-created_at"):
+            url = doc.document.url if doc.document else None
+            if url and request:
+                url = request.build_absolute_uri(url)
+            results.append(
+                {
+                    "id": doc.id,
+                    "source": "user",
+                    "doc_type": doc.doc_type,
+                    "document_name": doc.document_name or doc.filename,
+                    "url": url,
+                    "filename": doc.filename,
+                    "extension": doc.extension,
+                    "created_at": doc.created_at,
+                    "deal_id": None,
+                    "deal_status": None,
+                    "property_address": None,
+                }
+            )
+
+        # 2) Deal documents (DDU + payment proof)
+        deals = Deal.objects.filter(
+            Q(broker=user) | Q(developer=user)
+        ).select_related("real_property").order_by("-created_at")
+
+        for deal in deals:
+            address = getattr(deal.real_property, "address", "")
+
+            if deal.ddu_document:
+                fname = deal.ddu_document.name.rsplit("/", 1)[-1]
+                ext = f".{fname.rsplit('.', 1)[-1].lower()}" if "." in fname else ""
+                url = request.build_absolute_uri(deal.ddu_document.url)
+                results.append(
+                    {
+                        "id": deal.id * 10000 + 1,  # unique synthetic id
+                        "source": "deal",
+                        "doc_type": "ddu",
+                        "document_name": "ДДУ",
+                        "url": url,
+                        "filename": fname,
+                        "extension": ext,
+                        "created_at": deal.updated_at,
+                        "deal_id": deal.id,
+                        "deal_status": deal.status,
+                        "property_address": address,
+                    }
+                )
+
+            if deal.payment_proof_document:
+                fname = deal.payment_proof_document.name.rsplit("/", 1)[-1]
+                ext = f".{fname.rsplit('.', 1)[-1].lower()}" if "." in fname else ""
+                url = request.build_absolute_uri(deal.payment_proof_document.url)
+                results.append(
+                    {
+                        "id": deal.id * 10000 + 2,  # unique synthetic id
+                        "source": "deal",
+                        "doc_type": "payment_proof",
+                        "document_name": "Подтверждение оплаты",
+                        "url": url,
+                        "filename": fname,
+                        "extension": ext,
+                        "created_at": deal.updated_at,
+                        "deal_id": deal.id,
+                        "deal_status": deal.status,
+                        "property_address": address,
+                    }
+                )
+
+        # Sort all by created_at desc
+        results.sort(key=lambda x: x["created_at"], reverse=True)
+
+        serializer = UnifiedDocumentSerializer(results, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)

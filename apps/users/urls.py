@@ -1,6 +1,7 @@
 from django.urls import path
 
 from .views import (
+    AllDocumentsView,
     CustomTokenRefreshView,
     GetVerificationCodeView,
     LoginView,
@@ -36,6 +37,11 @@ urlpatterns = [
     # Current user
     path("me/", MeView.as_view(), name="me"),
     # User documents
+    path(
+        "documents/all/",
+        AllDocumentsView.as_view(),
+        name="documents-all",
+    ),
     path(
         "documents/upload/",
         UserDocumentsUploadView.as_view(),

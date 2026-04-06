@@ -15,6 +15,23 @@ from .models import Broker, Developer, UserDocument
 from .utils import is_email_verified_for_registration, verify_code
 from .validators import validate_inn
 
+
+class UnifiedDocumentSerializer(serializers.Serializer):
+    """Unified serializer for both user documents and deal documents."""
+
+    id = serializers.IntegerField()
+    source = serializers.CharField()  # "user" | "deal"
+    doc_type = serializers.CharField()
+    document_name = serializers.CharField()
+    url = serializers.CharField()
+    filename = serializers.CharField()
+    extension = serializers.CharField()
+    created_at = serializers.DateTimeField()
+    # Deal-specific fields (null for user documents)
+    deal_id = serializers.IntegerField(allow_null=True)
+    deal_status = serializers.CharField(allow_null=True)
+    property_address = serializers.CharField(allow_null=True)
+
 User = get_user_model()
 
 
