@@ -48,6 +48,10 @@ class PropertyListSerializer(serializers.ModelSerializer):
             "commission_rate",
             "deadline",
             "delivery_date",
+            "developer_name",
+            "floor",
+            "land_number",
+            "house_number",
             "status",
             "images",
             "created_at",
@@ -111,6 +115,10 @@ class PropertyCreateSerializer(serializers.ModelSerializer):
     rooms = serializers.IntegerField(required=False, allow_null=True, min_value=0)
     purpose = serializers.CharField(required=False, allow_null=True, allow_blank=True)
     delivery_date = serializers.DateField(required=False, allow_null=True)
+    developer_name = serializers.CharField(required=False, allow_blank=True, default="")
+    floor = serializers.IntegerField(required=False, allow_null=True, min_value=1)
+    land_number = serializers.CharField(required=False, allow_blank=True, default="")
+    house_number = serializers.CharField(required=False, allow_blank=True, default="")
 
     class Meta:
         model = Property
@@ -128,6 +136,10 @@ class PropertyCreateSerializer(serializers.ModelSerializer):
             "commission_rate",
             "deadline",
             "delivery_date",
+            "developer_name",
+            "floor",
+            "land_number",
+            "house_number",
             "status",
         ]
         read_only_fields = ["id", "reference_id"]
@@ -157,6 +169,10 @@ class PropertyUpdateSerializer(serializers.ModelSerializer):
     rooms = serializers.IntegerField(required=False, allow_null=True, min_value=0)
     purpose = serializers.CharField(required=False, allow_null=True, allow_blank=True)
     delivery_date = serializers.DateField(required=False, allow_null=True)
+    developer_name = serializers.CharField(required=False, allow_blank=True)
+    floor = serializers.IntegerField(required=False, allow_null=True, min_value=1)
+    land_number = serializers.CharField(required=False, allow_blank=True)
+    house_number = serializers.CharField(required=False, allow_blank=True)
 
     RESET_MODERATION_FIELDS = {
         "type",
@@ -169,6 +185,10 @@ class PropertyUpdateSerializer(serializers.ModelSerializer):
         "price",
         "deadline",
         "delivery_date",
+        "developer_name",
+        "floor",
+        "land_number",
+        "house_number",
         "status",
     }
 
@@ -186,6 +206,10 @@ class PropertyUpdateSerializer(serializers.ModelSerializer):
             "commission_rate",
             "deadline",
             "delivery_date",
+            "developer_name",
+            "floor",
+            "land_number",
+            "house_number",
             "status",
         ]
 

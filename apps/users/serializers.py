@@ -218,6 +218,7 @@ class BaseRegisterSerializer(serializers.Serializer):
 class RegisterBrokerSerializer(FileSizeValidationMixin, BaseRegisterSerializer):
     inn = serializers.FileField(required=True)
     inn_number = serializers.CharField(required=True, max_length=12)
+    phone_number = serializers.CharField(required=False, max_length=20, default="")
     passport = serializers.FileField(required=True)
 
     def validate_inn(self, file):
@@ -245,6 +246,7 @@ class BrokerInfoSerializer(serializers.ModelSerializer):
             "rejected_at",
             "rejection_reason",
             "inn_number",
+            "phone_number",
         ]
 
 

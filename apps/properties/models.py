@@ -133,6 +133,33 @@ class Property(models.Model):
         db_index=True,
     )
 
+    developer_name = models.CharField(
+        _("Застройщик"),
+        max_length=255,
+        blank=True,
+        default="",
+    )
+
+    floor = models.PositiveSmallIntegerField(
+        _("Этаж"),
+        null=True,
+        blank=True,
+    )
+
+    land_number = models.CharField(
+        _("Номер участка"),
+        max_length=50,
+        blank=True,
+        default="",
+    )
+
+    house_number = models.CharField(
+        _("Номер дома"),
+        max_length=50,
+        blank=True,
+        default="",
+    )
+
     status = models.CharField(
         _("Статус"),
         max_length=16,

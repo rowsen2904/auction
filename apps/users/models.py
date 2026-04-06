@@ -146,6 +146,13 @@ class Broker(models.Model):
 
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name="broker")
 
+    phone_number = models.CharField(
+        _("phone number"),
+        max_length=20,
+        blank=True,
+        default="",
+    )
+
     is_verified = models.BooleanField(default=False, db_index=True)
     verified_at = models.DateTimeField(null=True, blank=True)
     rejected_at = models.DateTimeField(null=True, blank=True)

@@ -217,6 +217,7 @@ class RegisterBrokerView(generics.GenericAPIView):
         first_name = serializer.validated_data.get("first_name", "")
         last_name = serializer.validated_data.get("last_name", "")
         inn_number = serializer.validated_data["inn_number"]
+        phone_number = serializer.validated_data.get("phone_number", "")
         inn = serializer.validated_data["inn"]
         passport = serializer.validated_data["passport"]
 
@@ -232,7 +233,7 @@ class RegisterBrokerView(generics.GenericAPIView):
                     is_active=True,
                 )
 
-                broker = Broker.objects.create(user=user)
+                broker = Broker.objects.create(user=user, phone_number=phone_number)
                 user.broker = broker
 
                 UserDocument.objects.create(
