@@ -399,8 +399,12 @@ class MyAvailablePropertiesView(generics.ListAPIView):
             )
             .only(
                 "id",
+                "reference_id",
+                "type",
                 "address",
                 "area",
+                "price",
+                "property_class",
                 "created_at",
             )
             .order_by(*self.ordering)
