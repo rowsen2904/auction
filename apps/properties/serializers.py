@@ -263,4 +263,4 @@ class PropertyImageUpdateSerializer(serializers.ModelSerializer):
 class MyAvailablePropertySerializer(serializers.ModelSerializer):
     class Meta:
         model = Property
-        fields = ["id", "address", "area"]
+        fields = ["id", "reference_id", "type", "address", "area", "price", "property_class"]
