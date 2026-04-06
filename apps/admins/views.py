@@ -117,7 +117,7 @@ class BrokerVerificationView(generics.GenericAPIView):
 
         with transaction.atomic():
             user = get_object_or_404(
-                self.get_queryset().select_for_update(),
+                self.get_queryset().select_for_update(of=("self",)),
                 id=user_id,
             )
 
