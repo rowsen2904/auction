@@ -64,7 +64,7 @@ class Property(models.Model):
         db_index=True,
     )
 
-    address = models.CharField(_("Адрес"), max_length=255, unique=True)
+    address = models.CharField(_("Адрес"), max_length=255, db_index=True)
 
     project = models.CharField(
         _("Проект"),
