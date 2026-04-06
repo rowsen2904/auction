@@ -156,7 +156,7 @@ class VerifyEmailSerializer(serializers.Serializer):
 
     def validate(self, data):
         if not verify_code(data["email"], data["code"]):
-            raise serializers.ValidationError({"code": "Invalid or expired code"})
+            raise serializers.ValidationError({"code": _("Неверный или истекший код.")})
         return data
 
 
@@ -182,13 +182,13 @@ class BaseRegisterSerializer(serializers.Serializer):
 
         if not is_email_verified_for_registration(email):
             raise serializers.ValidationError(
-                _("Email is not verified."),
+                _("Email не подтверждён."),
                 code="email_not_verified",
             )
 
         if User.objects.filter(email=email).exists():
             raise serializers.ValidationError(
-                _("User already exists."),
+                _("Пользователь уже существует."),
                 code="email_already_registered",
             )
 
@@ -200,7 +200,7 @@ class BaseRegisterSerializer(serializers.Serializer):
 
         if password != password_confirm:
             raise serializers.ValidationError(
-                {"password_confirm": [_("Passwords do not match.")]},
+                {"password_confirm": [_("Пароли не совпадают.")]},
                 code="passwords_do_not_match",
             )
 

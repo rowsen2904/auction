@@ -161,7 +161,7 @@ class UserActiveUpdateView(generics.GenericAPIView):
 
         if request.user.id == pk and new_is_active is False:
             raise ValidationError(
-                {"detail": _("You cannot deactivate your own account.")}
+                {"detail": _("Вы не можете деактивировать свой аккаунт.")}
             )
 
         user = get_object_or_404(
@@ -177,7 +177,7 @@ class UserActiveUpdateView(generics.GenericAPIView):
             {
                 "id": user.id,
                 "is_active": user.is_active,
-                "message": _("User updated."),
+                "message": _("Пользователь обновлён."),
             },
             status=status.HTTP_200_OK,
         )
@@ -215,7 +215,7 @@ class ApprovePropertyView(APIView):
             )
             if not prop:
                 return Response(
-                    {"detail": _("Not found.")},
+                    {"detail": _("Не найдено.")},
                     status=status.HTTP_404_NOT_FOUND,
                 )
 
@@ -223,7 +223,7 @@ class ApprovePropertyView(APIView):
 
         return Response(
             {
-                "message": _("Property has been successfully approved."),
+                "message": _("Объект успешно одобрен."),
                 "property_id": prop.id,
                 "moderation_status": prop.moderation_status,
                 "moderation_rejection_reason": prop.moderation_rejection_reason,

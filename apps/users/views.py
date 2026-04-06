@@ -77,7 +77,7 @@ class GetVerificationCodeView(generics.GenericAPIView):
 
         if User.objects.filter(email=email).exists():
             return Response(
-                {"error": _("User already exists.")},
+                {"error": _("Пользователь уже существует.")},
                 status=status.HTTP_409_CONFLICT,
             )
 
@@ -95,12 +95,12 @@ class GetVerificationCodeView(generics.GenericAPIView):
         try:
             send_verification_email_to(email, client_ip)
             return Response(
-                {"message": "Verification code sent to your email.", "email": email},
+                {"message": "Код подтверждения отправлен на вашу почту.", "email": email},
                 status=status.HTTP_200_OK,
             )
         except Exception:
             return Response(
-                {"error": "Failed to send email. Please try again later."},
+                {"error": "Не удалось отправить письмо. Попробуйте позже."},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
@@ -118,7 +118,7 @@ class VerifyEmailView(generics.GenericAPIView):
         mark_email_verified_for_registration(email)
 
         return Response(
-            {"message": "Email verified successfully.", "email": email},
+            {"message": "Email успешно подтверждён.", "email": email},
             status=status.HTTP_200_OK,
         )
 
@@ -149,12 +149,12 @@ class ResendCodeView(generics.GenericAPIView):
         try:
             send_verification_email_to(email, client_ip)
             return Response(
-                {"message": "New code sent to your email."},
+                {"message": "Новый код отправлен на вашу почту."},
                 status=status.HTTP_200_OK,
             )
         except Exception:
             return Response(
-                {"error": "Failed to send email. Please try again later."},
+                {"error": "Не удалось отправить письмо. Попробуйте позже."},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
@@ -197,7 +197,7 @@ class RegisterDeveloperView(generics.GenericAPIView):
 
         except IntegrityError:
             return Response(
-                {"error": _("User already exists.")},
+                {"error": _("Пользователь уже существует.")},
                 status=status.HTTP_409_CONFLICT,
             )
 
@@ -255,7 +255,7 @@ class RegisterBrokerView(generics.GenericAPIView):
 
         except IntegrityError:
             return Response(
-                {"error": _("User already exists.")},
+                {"error": _("Пользователь уже существует.")},
                 status=status.HTTP_409_CONFLICT,
             )
 
@@ -273,7 +273,7 @@ class MeView(APIView):
 
         if not getattr(user, "is_active", True):
             return Response(
-                {"detail": "User is inactive"},
+                {"detail": "Пользователь неактивен."},
                 status=status.HTTP_403_FORBIDDEN,
             )
 
