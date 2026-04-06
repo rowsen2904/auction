@@ -1,17 +1,21 @@
 from __future__ import annotations
 
-from auctions.models import Auction
-from auctions.participants import add_participant_with_flag, list_participants
-from auctions.permissions import IsBroker
-from auctions.realtime import broadcast_participant_joined
-from auctions.schemas import join_schema, participants_list_schema
-from auctions.services.rules import ensure_broker_verified, is_admin
+from django.contrib.auth import get_user_model
 from django.shortcuts import get_object_or_404
 from rest_framework import status
 from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
+
+from auctions.models import Auction
+from auctions.participants import add_participant_with_flag, list_participants
+from auctions.permissions import IsBroker
+from auctions.realtime import broadcast_participant_joined
+from auctions.schemas import join_schema, participants_list_schema
+from auctions.services.rules import ensure_broker_verified, is_admin
+
+User = get_user_model()
 
 
 class AuctionJoinView(APIView):
@@ -75,11 +79,28 @@ class AuctionParticipantsView(APIView):
                 "просматривать список участников закрытого аукциона."
             )
 
-        participants = list_participants(auction_id=auction.id)
+        participant_ids = list_participants(auction_id=auction.id)
+
+        # Enrich with user names
+        users = User.objects.filter(id__in=participant_ids).only(
+            "id", "first_name", "last_name", "email"
+        )
+        user_map = {u.id: u for u in users}
+
+        participants_data = []
+        for pid in participant_ids:
+            u = user_map.get(pid)
+            if u:
+                name = f"{u.first_name} {u.last_name}".strip() or u.email
+                participants_data.append({"id": pid, "name": name})
+            else:
+                participants_data.append({"id": pid, "name": f"#{pid}"})
+
         return Response(
             {
                 "auction_id": auction.id,
-                "participants": participants,
+                "participants": participant_ids,
+                "participants_detail": participants_data,
             },
             status=status.HTTP_200_OK,
         )
