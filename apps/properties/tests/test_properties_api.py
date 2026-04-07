@@ -582,7 +582,7 @@ class MyAvailablePropertiesAPITests(BasePropertyTestCase):
         self.assertEqual(resp.data["results"][0]["id"], available_prop.id)
         self.assertEqual(resp.data["results"][0]["address"], "Available Property")
 
-    def test_my_available_properties_returns_only_id_address_area_fields(self):
+    def test_my_available_properties_returns_expected_fields(self):
         self.client.force_authenticate(user=self.dev1)
 
         self._create_property(
@@ -590,6 +590,8 @@ class MyAvailablePropertiesAPITests(BasePropertyTestCase):
             address="Field Check Property",
             area=Decimal("77.70"),
             price=Decimal("5550000.00"),
+            p_type="apartment",
+            p_class="comfort",
         )
 
         resp = self.client.get(BASE_MY_AVAILABLE, format="json")
@@ -597,9 +599,24 @@ class MyAvailablePropertiesAPITests(BasePropertyTestCase):
         self.assertEqual(resp.data["count"], 1)
 
         item = resp.data["results"][0]
-        self.assertEqual(set(item.keys()), {"id", "address", "area"})
+        self.assertEqual(
+            set(item.keys()),
+            {
+                "id",
+                "reference_id",
+                "type",
+                "address",
+                "area",
+                "price",
+                "property_class",
+            },
+        )
         self.assertEqual(item["address"], "Field Check Property")
         self.assertEqual(item["area"], "77.70")
+        self.assertEqual(item["price"], "5550000.00")
+        self.assertEqual(item["type"], "apartment")
+        self.assertEqual(item["property_class"], "comfort")
+        self.assertIsNotNone(item["reference_id"])
 
     def test_my_available_properties_paginated(self):
         self.client.force_authenticate(user=self.dev1)
