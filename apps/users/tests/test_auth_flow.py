@@ -513,3 +513,124 @@ class TestLoginAndRefresh(APITestCase):
             resp.data["user"]["broker"]["rejection_reason"],
             "Passport scan is unreadable.",
         )
+
+
+@override_settings(
+    CACHES={
+        "default": {
+            "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+            "LOCATION": "test-cache",
+        }
+    },
+)
+class TestChangePassword(APITestCase):
+    def setUp(self):
+        cache.clear()
+        self.old_password = "StrongPass123!"
+        self.new_password = "NewStrongPass123!"
+
+        self.user = User.objects.create_user(
+            email="change-password@example.com",
+            password=self.old_password,
+            role=User.Roles.DEVELOPER,
+        )
+        Developer.objects.create(user=self.user, company_name="Acme Inc")
+        self.url = f"{BASE}/change-password/"
+
+    def test_change_password_success_updates_password(self):
+        self.client.force_authenticate(user=self.user)
+
+        resp = self.client.post(
+            self.url,
+            data={
+                "old_password": self.old_password,
+                "new_password": self.new_password,
+                "new_password_confirm": self.new_password,
+            },
+            format="json",
+        )
+
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.assertEqual(resp.data["message"], "Пароль успешно изменён.")
+
+        self.user.refresh_from_db()
+        self.assertTrue(self.user.check_password(self.new_password))
+        self.assertFalse(self.user.check_password(self.old_password))
+
+        self.client.force_authenticate(user=None)
+
+        old_login = self.client.post(
+            f"{BASE}/login/",
+            data={
+                "email": self.user.email,
+                "password": self.old_password,
+            },
+            format="json",
+        )
+        self.assertEqual(old_login.status_code, status.HTTP_401_UNAUTHORIZED)
+
+        new_login = self.client.post(
+            f"{BASE}/login/",
+            data={
+                "email": self.user.email,
+                "password": self.new_password,
+            },
+            format="json",
+        )
+        self.assertEqual(new_login.status_code, status.HTTP_200_OK)
+        self.assertIn("access", new_login.data)
+        self.assertIn("refresh", new_login.data)
+
+    def test_change_password_wrong_old_password_returns_400(self):
+        self.client.force_authenticate(user=self.user)
+
+        resp = self.client.post(
+            self.url,
+            data={
+                "old_password": "WrongOldPass123!",
+                "new_password": self.new_password,
+                "new_password_confirm": self.new_password,
+            },
+            format="json",
+        )
+
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("old_password", resp.data)
+
+        self.user.refresh_from_db()
+        self.assertTrue(self.user.check_password(self.old_password))
+
+    def test_change_password_password_confirm_mismatch_returns_400(self):
+        self.client.force_authenticate(user=self.user)
+
+        resp = self.client.post(
+            self.url,
+            data={
+                "old_password": self.old_password,
+                "new_password": self.new_password,
+                "new_password_confirm": "AnotherPass123!",
+            },
+            format="json",
+        )
+
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("new_password_confirm", resp.data)
+
+        self.user.refresh_from_db()
+        self.assertTrue(self.user.check_password(self.old_password))
+
+    def test_change_password_requires_authentication(self):
+        resp = self.client.post(
+            self.url,
+            data={
+                "old_password": self.old_password,
+                "new_password": self.new_password,
+                "new_password_confirm": self.new_password,
+            },
+            format="json",
+        )
+
+        self.assertIn(
+            resp.status_code,
+            {status.HTTP_401_UNAUTHORIZED, status.HTTP_403_FORBIDDEN},
+        )

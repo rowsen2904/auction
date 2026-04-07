@@ -2,6 +2,7 @@ from django.urls import path
 
 from .views import (
     AllDocumentsView,
+    ChangePasswordView,
     CustomTokenRefreshView,
     GetVerificationCodeView,
     LoginView,
@@ -34,6 +35,8 @@ urlpatterns = [
         RegisterBrokerView.as_view(),
         name="register-broker",
     ),
+    # Change password
+    path("change-password/", ChangePasswordView.as_view(), name="change-password"),
     # Current user
     path("me/", MeView.as_view(), name="me"),
     # User documents

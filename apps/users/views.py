@@ -25,6 +25,7 @@ from .schemas import (
     verify_email_schema,
 )
 from .serializers import (
+    ChangePasswordSerializer,
     EmailSerializer,
     LoginSerializer,
     MeSerializer,
@@ -450,3 +451,25 @@ class AllDocumentsView(APIView):
 
         serializer = UnifiedDocumentSerializer(results, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+class ChangePasswordView(generics.GenericAPIView):
+    permission_classes = [IsAuthenticated]
+    serializer_class = ChangePasswordSerializer
+    parser_classes = [JSONParser]
+
+    @extend_schema(
+        summary="Change current user password",
+        tags=["Auth"],
+        request=ChangePasswordSerializer,
+        responses={200: MessageResponseSerializer},
+    )
+    def post(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+
+        return Response(
+            {"message": _("Пароль успешно изменён.")},
+            status=status.HTTP_200_OK,
+        )

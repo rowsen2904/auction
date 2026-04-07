@@ -32,6 +32,7 @@ class UnifiedDocumentSerializer(serializers.Serializer):
     deal_status = serializers.CharField(allow_null=True)
     property_address = serializers.CharField(allow_null=True)
 
+
 User = get_user_model()
 
 
@@ -433,3 +434,64 @@ class UserDocumentDeleteSerializer(UserDocumentAccessMixin, serializers.Serializ
         document = self.validated_data["document_obj"]
         document.delete()
         return document
+
+
+class ChangePasswordSerializer(serializers.Serializer):
+    old_password = serializers.CharField(
+        write_only=True,
+        required=True,
+        style={"input_type": "password"},
+    )
+    new_password = serializers.CharField(
+        write_only=True,
+        min_length=8,
+        max_length=128,
+        required=True,
+        style={"input_type": "password"},
+    )
+    new_password_confirm = serializers.CharField(
+        write_only=True,
+        min_length=8,
+        max_length=128,
+        required=True,
+        style={"input_type": "password"},
+    )
+
+    def validate_old_password(self, value):
+        user = self.context["request"].user
+        if not user.check_password(value):
+            raise serializers.ValidationError(_("Старый пароль введён неверно."))
+        return value
+
+    def validate(self, attrs):
+        user = self.context["request"].user
+        new_password = attrs.get("new_password")
+        new_password_confirm = attrs.get("new_password_confirm")
+
+        if new_password != new_password_confirm:
+            raise serializers.ValidationError(
+                {"new_password_confirm": [_("Пароли не совпадают.")]},
+                code="passwords_do_not_match",
+            )
+
+        try:
+            validate_password(password=new_password, user=user)
+        except DjangoValidationError as e:
+            raise serializers.ValidationError(
+                {"new_password": e.messages},
+                code="password_invalid",
+            )
+
+        if attrs["old_password"] == new_password:
+            raise serializers.ValidationError(
+                {"new_password": [_("Новый пароль должен отличаться от старого.")]},
+                code="same_as_old_password",
+            )
+
+        return attrs
+
+    def save(self, **kwargs):
+        user = self.context["request"].user
+        user.set_password(self.validated_data["new_password"])
+        user.save(update_fields=["password"])
+        return user
