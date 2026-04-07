@@ -45,6 +45,7 @@ urlpatterns = [
         "api/v1/payments/",
         include(("payments.urls", "payments"), namespace="payments"),
     ),
+    path("api/v1/notifications/", include("notifications.urls")),
 ]
 
 if settings.DEBUG:

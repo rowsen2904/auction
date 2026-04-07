@@ -6,6 +6,10 @@ from celery import shared_task
 from django.db import transaction
 from django.utils import timezone
 from django_celery_beat.models import ClockedSchedule, PeriodicTask
+from notifications.services import (
+    notify_closed_auction_finished_for_owner,
+    notify_open_auction_finished_for_owner,
+)
 
 from .models import Auction, Bid
 from .realtime import broadcast_auction_status
@@ -114,6 +118,25 @@ def finish_auction(self, auction_id: int) -> None:
 
         auction.status = Auction.Status.FINISHED
         auction.save(update_fields=["winner_bid_id", "status", "updated_at"])
+
+        if auction.mode == Auction.Mode.OPEN:
+            winner_bid = None
+            if auction.winner_bid_id:
+                winner_bid = (
+                    Bid.objects.select_related("broker")
+                    .filter(id=auction.winner_bid_id)
+                    .first()
+                )
+            notify_open_auction_finished_for_owner(
+                auction=auction, winner_bid=winner_bid
+            )
+        else:
+            sealed_bids_count = Bid.objects.filter(
+                auction_id=auction.id, is_sealed=True
+            ).count()
+            notify_closed_auction_finished_for_owner(
+                auction=auction, bids_count=sealed_bids_count
+            )
 
         # OPEN: auto-create deal if winner exists
         if auction.mode == Auction.Mode.OPEN and auction.winner_bid_id:

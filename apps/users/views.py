@@ -1,8 +1,10 @@
+from deals.models import Deal
 from django.contrib.auth import get_user_model
 from django.db import IntegrityError, transaction
 from django.db.models import Q
 from django.utils.translation import gettext_lazy as _
 from drf_spectacular.utils import extend_schema
+from notifications.services import notify_new_broker_registered
 from rest_framework import generics, status
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.permissions import AllowAny, IsAuthenticated
@@ -11,8 +13,6 @@ from rest_framework.views import APIView
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
 from helpers.utils import get_client_ip
-
-from deals.models import Deal
 
 from .models import Broker, Developer, UserDocument
 from .schemas import (
@@ -95,7 +95,10 @@ class GetVerificationCodeView(generics.GenericAPIView):
         try:
             send_verification_email_to(email, client_ip)
             return Response(
-                {"message": "Код подтверждения отправлен на вашу почту.", "email": email},
+                {
+                    "message": "Код подтверждения отправлен на вашу почту.",
+                    "email": email,
+                },
                 status=status.HTTP_200_OK,
             )
         except Exception:
@@ -249,6 +252,7 @@ class RegisterBrokerView(generics.GenericAPIView):
                     document_name=passport.name.rsplit(".", 1)[0],
                 )
 
+            notify_new_broker_registered(broker_user=user)
             clear_email_verified_for_registration(email)
             payload = RegisterResponseSerializer.build_payload(user)
             return Response(payload, status=status.HTTP_201_CREATED)
@@ -392,9 +396,11 @@ class AllDocumentsView(APIView):
             )
 
         # 2) Deal documents (DDU + payment proof)
-        deals = Deal.objects.filter(
-            Q(broker=user) | Q(developer=user)
-        ).select_related("real_property").order_by("-created_at")
+        deals = (
+            Deal.objects.filter(Q(broker=user) | Q(developer=user))
+            .select_related("real_property")
+            .order_by("-created_at")
+        )
 
         for deal in deals:
             address = getattr(deal.real_property, "address", "")

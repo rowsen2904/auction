@@ -6,6 +6,7 @@ from django.db import transaction
 from django.db.models import Case, Sum, Value, When
 from django.shortcuts import get_object_or_404
 from django.utils.translation import gettext_lazy as _
+from notifications.services import notify_payment_paid
 from rest_framework import status
 from rest_framework.exceptions import ValidationError
 from rest_framework.generics import ListAPIView
@@ -161,6 +162,8 @@ class UploadReceiptView(APIView):
             payment.receipt_document = ser.validated_data["receipt_document"]
             payment.status = Payment.Status.PAID
             payment.save(update_fields=["receipt_document", "status", "updated_at"])
+
+        notify_payment_paid(payment=payment)
 
         return Response(
             {"detail": "Чек загружен. Выплата отмечена как оплаченная."},

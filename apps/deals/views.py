@@ -3,6 +3,12 @@ from __future__ import annotations
 from django.db import transaction
 from django.shortcuts import get_object_or_404
 from django.utils.translation import gettext_lazy as _
+from notifications.services import (
+    notify_admin_approved,
+    notify_admin_rejected,
+    notify_developer_confirmed,
+    notify_developer_rejected,
+)
 from properties.models import Property
 from rest_framework import status
 from rest_framework.exceptions import PermissionDenied, ValidationError
@@ -268,6 +274,8 @@ class AdminApproveView(APIView):
             ),
         )
 
+        notify_admin_approved(deal=deal_obj)
+
         return Response(
             {"detail": "Документы одобрены. Ожидается подтверждение девелопера."},
             status=status.HTTP_200_OK,
@@ -318,6 +326,8 @@ class AdminRejectView(APIView):
                 f"Пожалуйста, исправьте и повторно отправьте сделку на проверку."
             ),
         )
+
+        notify_admin_rejected(deal=deal_obj, reason=reason)
 
         return Response(
             {"detail": "Сделка отклонена. Брокер уведомлён."},
@@ -394,6 +404,8 @@ class DeveloperConfirmView(APIView):
             ),
         )
 
+        notify_developer_confirmed(deal=deal_obj)
+
         return Response(
             {"detail": "Сделка подтверждена. Выплаты созданы."},
             status=status.HTTP_200_OK,
@@ -450,6 +462,8 @@ class DeveloperRejectView(APIView):
                 f"Пожалуйста, исправьте документы и повторно отправьте на проверку."
             ),
         )
+
+        notify_developer_rejected(deal=deal_obj, reason=reason)
 
         return Response(
             {"detail": "Сделка отклонена. Брокер уведомлён."},

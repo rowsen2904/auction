@@ -55,6 +55,7 @@ INSTALLED_APPS = [
     "admins",
     "deals",
     "payments",
+    "notifications",
 ]
 
 MIDDLEWARE = [
@@ -318,3 +319,5 @@ from decimal import Decimal as _Decimal  # noqa: E402
 
 PLATFORM_COMMISSION_RATE = _Decimal("0.40")  # 0.4%
 DEAL_DOCUMENT_DEADLINE_DAYS = 7
+
+NOTIFICATION_DEVELOPER_CONFIRM_REMINDER_DAYS = 3

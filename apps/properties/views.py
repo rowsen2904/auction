@@ -4,6 +4,7 @@ from django.db import IntegrityError, transaction
 from django.db.models import Prefetch, Q
 from django.shortcuts import get_object_or_404
 from django.utils.translation import gettext_lazy as _
+from notifications.services import notify_new_property_pending
 from rest_framework import generics, status
 from rest_framework.exceptions import ValidationError
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
@@ -88,7 +89,12 @@ class PropertyListCreateView(generics.ListCreateAPIView):
         return PropertyListSerializer
 
     def perform_create(self, serializer):
-        serializer.save(owner=self.request.user)
+        prop = serializer.save(owner=self.request.user)
+        if (
+            prop.moderation_status == Property.ModerationStatuses.PENDING
+            and prop.status != Property.PropertyStatuses.DRAFT
+        ):
+            notify_new_property_pending(real_property=prop)
 
     @properties_list_schema
     def get(self, request, *args, **kwargs):

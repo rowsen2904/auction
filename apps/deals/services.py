@@ -61,6 +61,10 @@ def create_deal_from_bid(*, auction, bid, real_property) -> Deal:
 
     send_deal_created_email.delay(deal.id)
 
+    from notifications.services import notify_broker_auction_won
+
+    notify_broker_auction_won(deal=deal)
+
     return deal
 
 
@@ -95,6 +99,10 @@ def create_payments_for_deal(deal: Deal) -> None:
             "status": Payment.Status.PENDING,
         },
     )
+
+    from notifications.services import notify_payments_created
+
+    notify_payments_created(deal=deal)
 
 
 def submit_deal_for_review(deal: Deal, actor=None) -> bool:
@@ -138,5 +146,9 @@ def submit_deal_for_review(deal: Deal, actor=None) -> bool:
     from .tasks import send_deal_submitted_for_review_email
 
     send_deal_submitted_for_review_email.delay(deal.id)
+
+    from notifications.services import notify_deal_submitted_for_review
+
+    notify_deal_submitted_for_review(deal=deal)
 
     return True

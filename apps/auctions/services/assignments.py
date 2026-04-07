@@ -4,6 +4,7 @@ from auctions.models import Auction, Bid
 from deals.models import Deal
 from deals.services import create_deal_from_bid
 from django.db import transaction
+from notifications.services import notify_closed_not_selected
 from rest_framework.exceptions import ValidationError
 
 
@@ -61,6 +62,11 @@ def select_closed_auction_winners(
         if len(bids) == 1:
             auction.winner_bid = bids[0]
             auction.save(update_fields=["winner_bid_id"])
+
+    notify_closed_not_selected(
+        auction=auction,
+        selected_broker_ids=[bid.broker_id for bid in bids],
+    )
 
     return bids
 

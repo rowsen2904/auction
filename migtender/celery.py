@@ -22,4 +22,24 @@ app.conf.beat_schedule = {
         "task": "deals.tasks.check_overdue_deals",
         "schedule": crontab(hour=4, minute=0),  # every day at 04:00
     },
+    "notifications-document-deadline-reminders": {
+        "task": "notifications.tasks.send_document_deadline_reminders",
+        "schedule": crontab(hour=9, minute=0),
+    },
+    "notifications-overdue-deals": {
+        "task": "notifications.tasks.notify_overdue_deals_task",
+        "schedule": crontab(hour=9, minute=10),
+    },
+    "notifications-developer-confirm-reminders": {
+        "task": "notifications.tasks.send_developer_confirm_reminders",
+        "schedule": crontab(hour=10, minute=0),
+    },
+    "notifications-admin-daily-deals-summary": {
+        "task": "notifications.tasks.send_admin_daily_deals_summary",
+        "schedule": crontab(hour=8, minute=0),
+    },
+    "notifications-admin-daily-payments-summary": {
+        "task": "notifications.tasks.send_admin_daily_payments_summary",
+        "schedule": crontab(hour=8, minute=5),
+    },
 }
