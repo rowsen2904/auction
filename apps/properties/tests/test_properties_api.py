@@ -132,11 +132,13 @@ class PropertyAPITests(BasePropertyTestCase):
         self.client.force_authenticate(user=self.dev1)
 
         address = "Moscow, Created By Dev1"
+        project_comment = "Комментарий к проекту: первая очередь"
         resp = self.client.post(
             BASE,
             data={
                 "type": "apartment",
                 "address": address,
+                "project_comment": project_comment,
                 "area": "50.00",
                 "property_class": "comfort",
                 "price": "1000000.00",
@@ -148,6 +150,31 @@ class PropertyAPITests(BasePropertyTestCase):
 
         prop = Property.objects.get(address=address)
         self.assertEqual(prop.owner_id, self.dev1.id)
+        self.assertEqual(prop.project_comment, project_comment)
+        self.assertEqual(resp.data["project_comment"], project_comment)
+
+    def test_create_property_null_project_comment_saved_as_empty_string(self):
+        self.client.force_authenticate(user=self.dev1)
+
+        address = "Moscow, Null Project Comment"
+        resp = self.client.post(
+            BASE,
+            data={
+                "type": "apartment",
+                "address": address,
+                "project_comment": None,
+                "area": "50.00",
+                "property_class": "comfort",
+                "price": "1000000.00",
+                "status": "draft",
+            },
+            format="json",
+        )
+        self.assertEqual(resp.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(resp.data["project_comment"], "")
+
+        prop = Property.objects.get(address=address)
+        self.assertEqual(prop.project_comment, "")
 
     def test_list_properties_paginated(self):
         for i in range(21):
@@ -267,6 +294,26 @@ class PropertyAPITests(BasePropertyTestCase):
 
         prop.refresh_from_db()
         self.assertEqual(prop.price, Decimal("9999999.00"))
+
+    def test_patch_property_project_comment_resets_moderation_status_to_pending(self):
+        prop = self._create_property(
+            self.dev1,
+            address="Project Comment Patch",
+            moderation_status_val=Property.ModerationStatuses.APPROVED,
+        )
+
+        self.client.force_authenticate(user=self.dev1)
+        resp = self.client.patch(
+            f"{BASE}{prop.id}/",
+            data={"project_comment": "Обновлённый комментарий"},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.assertEqual(resp.data["project_comment"], "Обновлённый комментарий")
+
+        prop.refresh_from_db()
+        self.assertEqual(prop.project_comment, "Обновлённый комментарий")
+        self.assertEqual(prop.moderation_status, Property.ModerationStatuses.PENDING)
 
     def test_patch_property_resets_moderation_status_to_pending_on_change(self):
         prop = self._create_property(

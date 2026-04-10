@@ -39,6 +39,7 @@ class PropertyListSerializer(serializers.ModelSerializer):
             "developer",
             "type",
             "project",
+            "project_comment",
             "rooms",
             "purpose",
             "address",
@@ -112,13 +113,25 @@ class PropertyCreateSerializer(serializers.ModelSerializer):
         allow_null=True,
     )
     project = serializers.CharField(required=False, allow_null=True, allow_blank=True)
+    project_comment = serializers.CharField(
+        required=False,
+        allow_null=True,
+        allow_blank=True,
+        default="",
+    )
     rooms = serializers.IntegerField(required=False, allow_null=True, min_value=0)
     purpose = serializers.CharField(required=False, allow_null=True, allow_blank=True)
     delivery_date = serializers.DateField(required=False, allow_null=True)
-    developer_name = serializers.CharField(required=False, allow_blank=True, allow_null=True, default="")
+    developer_name = serializers.CharField(
+        required=False, allow_blank=True, allow_null=True, default=""
+    )
     floor = serializers.IntegerField(required=False, allow_null=True, min_value=1)
-    land_number = serializers.CharField(required=False, allow_blank=True, allow_null=True, default="")
-    house_number = serializers.CharField(required=False, allow_blank=True, allow_null=True, default="")
+    land_number = serializers.CharField(
+        required=False, allow_blank=True, allow_null=True, default=""
+    )
+    house_number = serializers.CharField(
+        required=False, allow_blank=True, allow_null=True, default=""
+    )
 
     class Meta:
         model = Property
@@ -127,6 +140,7 @@ class PropertyCreateSerializer(serializers.ModelSerializer):
             "reference_id",
             "type",
             "project",
+            "project_comment",
             "rooms",
             "purpose",
             "address",
@@ -157,7 +171,12 @@ class PropertyCreateSerializer(serializers.ModelSerializer):
             attrs["property_class"] = None
 
         # Convert null to empty string for CharField fields
-        for field in ("developer_name", "land_number", "house_number"):
+        for field in (
+            "project_comment",
+            "developer_name",
+            "land_number",
+            "house_number",
+        ):
             if field in attrs and attrs[field] is None:
                 attrs[field] = ""
 
@@ -171,17 +190,29 @@ class PropertyUpdateSerializer(serializers.ModelSerializer):
         allow_null=True,
     )
     project = serializers.CharField(required=False, allow_null=True, allow_blank=True)
+    project_comment = serializers.CharField(
+        required=False,
+        allow_null=True,
+        allow_blank=True,
+    )
     rooms = serializers.IntegerField(required=False, allow_null=True, min_value=0)
     purpose = serializers.CharField(required=False, allow_null=True, allow_blank=True)
     delivery_date = serializers.DateField(required=False, allow_null=True)
-    developer_name = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    developer_name = serializers.CharField(
+        required=False, allow_blank=True, allow_null=True
+    )
     floor = serializers.IntegerField(required=False, allow_null=True, min_value=1)
-    land_number = serializers.CharField(required=False, allow_blank=True, allow_null=True)
-    house_number = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    land_number = serializers.CharField(
+        required=False, allow_blank=True, allow_null=True
+    )
+    house_number = serializers.CharField(
+        required=False, allow_blank=True, allow_null=True
+    )
 
     RESET_MODERATION_FIELDS = {
         "type",
         "project",
+        "project_comment",
         "rooms",
         "purpose",
         "address",
@@ -202,6 +233,7 @@ class PropertyUpdateSerializer(serializers.ModelSerializer):
         fields = [
             "type",
             "project",
+            "project_comment",
             "rooms",
             "purpose",
             "address",
@@ -231,7 +263,12 @@ class PropertyUpdateSerializer(serializers.ModelSerializer):
             attrs["property_class"] = None
 
         # Convert null to empty string for CharField fields
-        for field in ("developer_name", "land_number", "house_number"):
+        for field in (
+            "project_comment",
+            "developer_name",
+            "land_number",
+            "house_number",
+        ):
             if field in attrs and attrs[field] is None:
                 attrs[field] = ""
 
@@ -297,4 +334,12 @@ class PropertyImageUpdateSerializer(serializers.ModelSerializer):
 class MyAvailablePropertySerializer(serializers.ModelSerializer):
     class Meta:
         model = Property
-        fields = ["id", "reference_id", "type", "address", "area", "price", "property_class"]
+        fields = [
+            "id",
+            "reference_id",
+            "type",
+            "address",
+            "area",
+            "price",
+            "property_class",
+        ]

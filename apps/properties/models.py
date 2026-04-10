@@ -74,6 +74,12 @@ class Property(models.Model):
         db_index=True,
     )
 
+    project_comment = models.TextField(
+        _("Комментарий к проекту"),
+        blank=True,
+        default="",
+    )
+
     rooms = models.PositiveSmallIntegerField(
         _("Комнат"),
         null=True,
