@@ -235,7 +235,7 @@ class AdminDeveloperUpdateView(generics.GenericAPIView):
 
     def _get_developer_user(self, pk: int):
         return get_object_or_404(
-            User.objects.select_for_update()
+            User.objects.select_for_update(of=("self",))
             .select_related("developer")
             .only(
                 "id",
