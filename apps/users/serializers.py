@@ -251,10 +251,6 @@ class BrokerInfoSerializer(serializers.ModelSerializer):
         ]
 
 
-class RegisterDeveloperSerializer(BaseRegisterSerializer):
-    company_name = serializers.CharField(required=True)
-
-
 class DeveloperInfoSerializer(serializers.ModelSerializer):
     class Meta:
         model = Developer

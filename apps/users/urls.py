@@ -8,7 +8,6 @@ from .views import (
     LoginView,
     MeView,
     RegisterBrokerView,
-    RegisterDeveloperView,
     ResendCodeView,
     UserDocumentDeleteView,
     UserDocumentNameUpdateView,
@@ -25,11 +24,6 @@ urlpatterns = [
     path("verify-email/", VerifyEmailView.as_view(), name="verify-email"),
     path("resend-code/", ResendCodeView.as_view(), name="resend-code"),
     # Register
-    path(
-        "register/developer/",
-        RegisterDeveloperView.as_view(),
-        name="register-developer",
-    ),
     path(
         "register/broker/",
         RegisterBrokerView.as_view(),

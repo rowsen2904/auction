@@ -1,5 +1,5 @@
 from django.contrib.auth import get_user_model
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.db.models import Prefetch
 from django.shortcuts import get_object_or_404
 from django.utils.translation import gettext_lazy as _
@@ -11,12 +11,14 @@ from rest_framework.permissions import IsAdminUser
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from apps.users.models import UserDocument
+from apps.users.models import Developer, UserDocument
 from apps.users.serializers import TokenUserSerializer
 
 from .filters import UserFilter
 from .paginations import UserListPagination
 from .schemas import (
+    admin_developer_create_schema,
+    admin_developer_update_schema,
     approve_property_schema,
     broker_verify_schema,
     pending_properties_list_schema,
@@ -25,6 +27,8 @@ from .schemas import (
     user_list_schema,
 )
 from .serializers import (
+    AdminDeveloperCreateSerializer,
+    AdminDeveloperUpdateSerializer,
     BrokerVerificationSerializer,
     PendingPropertySerializer,
     PropertyRejectSerializer,
@@ -178,6 +182,119 @@ class UserActiveUpdateView(generics.GenericAPIView):
                 "id": user.id,
                 "is_active": user.is_active,
                 "message": _("Пользователь обновлён."),
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
+class AdminDeveloperCreateView(generics.GenericAPIView):
+    permission_classes = [IsAdminUser]
+    serializer_class = AdminDeveloperCreateSerializer
+
+    @admin_developer_create_schema
+    def post(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        validated = serializer.validated_data
+        email = validated["email"]
+
+        try:
+            with transaction.atomic():
+                user = User.objects.create_user(
+                    email=email,
+                    password=validated["password"],
+                    first_name=validated.get("first_name", ""),
+                    last_name=validated.get("last_name", ""),
+                    role=User.Roles.DEVELOPER,
+                    is_active=True,
+                )
+                Developer.objects.create(
+                    user=user,
+                    company_name=validated["company_name"],
+                )
+
+        except IntegrityError:
+            return Response(
+                {"error": _("Пользователь уже существует.")},
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        return Response(
+            {
+                "message": _("Девелопер успешно создан."),
+                "user": TokenUserSerializer(user, context={"request": request}).data,
+            },
+            status=status.HTTP_201_CREATED,
+        )
+
+
+class AdminDeveloperUpdateView(generics.GenericAPIView):
+    permission_classes = [IsAdminUser]
+    serializer_class = AdminDeveloperUpdateSerializer
+
+    def _get_developer_user(self, pk: int):
+        return get_object_or_404(
+            User.objects.select_for_update()
+            .select_related("developer")
+            .only(
+                "id",
+                "email",
+                "first_name",
+                "last_name",
+                "role",
+                "is_active",
+                "developer__id",
+                "developer__company_name",
+            )
+            .filter(role=User.Roles.DEVELOPER),
+            pk=pk,
+        )
+
+    @admin_developer_update_schema
+    def patch(self, request, pk: int, *args, **kwargs):
+        serializer = self.get_serializer(
+            data=request.data,
+            partial=True,
+            context={"user_id": pk},
+        )
+        serializer.is_valid(raise_exception=True)
+        validated = serializer.validated_data
+
+        try:
+            with transaction.atomic():
+                user = self._get_developer_user(pk)
+                developer = getattr(user, "developer", None)
+                if developer is None:
+                    raise ValidationError(
+                        {"detail": _("Профиль девелопера для пользователя не найден.")}
+                    )
+
+                user_fields = []
+                for field in ("email", "first_name", "last_name"):
+                    if field in validated and getattr(user, field) != validated[field]:
+                        setattr(user, field, validated[field])
+                        user_fields.append(field)
+
+                if user_fields:
+                    user.save(update_fields=user_fields)
+
+                if (
+                    "company_name" in validated
+                    and developer.company_name != validated["company_name"]
+                ):
+                    developer.company_name = validated["company_name"]
+                    developer.save(update_fields=["company_name"])
+        except IntegrityError:
+            return Response(
+                {"error": _("Пользователь уже существует.")},
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        return Response(
+            {
+                "message": _("Девелопер успешно обновлён."),
+                "user": TokenUserSerializer(user, context={"request": request}).data,
             },
             status=status.HTTP_200_OK,
         )

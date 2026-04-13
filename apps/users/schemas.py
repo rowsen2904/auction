@@ -10,7 +10,6 @@ from .serializers import (
     MessageResponseSerializer,
     RateLimitResponseSerializer,
     RegisterBrokerSerializer,
-    RegisterDeveloperSerializer,
     RegisterResponseSerializer,
     VerifyEmailSerializer,
 )
@@ -33,14 +32,6 @@ VERIFY_EMAIL_DOC = (
 RESEND_CODE_DOC = (
     "Sends a new OTP verification code to the provided email address.\n\n"
     "**Important:** This endpoint does **not** create a user account."
-)
-
-REGISTER_DEVELOPER_DOC = (
-    "Registers a new user with role **developer**.\n\n"
-    "Requirements:\n"
-    "- Email must be verified via OTP beforehand.\n"
-    "- `company_name` is required.\n"
-    "- Documents belong to the user model, not to developer."
 )
 
 REGISTER_BROKER_DOC = (
@@ -110,47 +101,6 @@ resend_code_schema = extend_schema(
         ),
         429: OpenApiResponse(
             response=RateLimitResponseSerializer, description="Rate limit exceeded."
-        ),
-    },
-    tags=["Auth"],
-)
-
-register_developer_schema = extend_schema(
-    summary="Register developer",
-    description=REGISTER_DEVELOPER_DOC,
-    request=RegisterDeveloperSerializer,
-    responses={
-        201: OpenApiResponse(
-            response=RegisterResponseSerializer,
-            description="Developer registered.",
-            examples=[
-                OpenApiExample(
-                    "Created",
-                    value={
-                        "message": "Registration successful.",
-                        "refresh": "some_refresh_token",
-                        "access": "some_access_token",
-                        "user": {
-                            "id": 1,
-                            "email": "user@example.com",
-                            "first_name": "John",
-                            "last_name": "Doe",
-                            "role": "developer",
-                            "broker": None,
-                            "developer": {
-                                "company_name": "Acme Inc",
-                            },
-                            "documents": [],
-                        },
-                    },
-                )
-            ],
-        ),
-        400: OpenApiResponse(
-            response=ErrorResponseSerializer, description="Validation error."
-        ),
-        409: OpenApiResponse(
-            response=ErrorResponseSerializer, description="User already exists."
         ),
     },
     tags=["Auth"],

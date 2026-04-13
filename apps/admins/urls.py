@@ -1,6 +1,8 @@
 from django.urls import path
 
 from .views import (
+    AdminDeveloperCreateView,
+    AdminDeveloperUpdateView,
     ApprovePropertyView,
     BrokerVerificationView,
     PendingPropertiesListView,
@@ -16,6 +18,16 @@ urlpatterns = [
         "users/<int:pk>/block/",
         UserActiveUpdateView.as_view(),
         name="admin-user-block",
+    ),
+    path(
+        "developers/",
+        AdminDeveloperCreateView.as_view(),
+        name="admin-developer-create",
+    ),
+    path(
+        "developers/<int:pk>/",
+        AdminDeveloperUpdateView.as_view(),
+        name="admin-developer-update",
     ),
     # Brokers
     path(

@@ -10,7 +10,12 @@ from rest_framework import serializers
 
 from apps.users.serializers import TokenUserSerializer
 
-from .serializers import PendingPropertySerializer, UserActiveUpdateSerializer
+from .serializers import (
+    AdminDeveloperCreateSerializer,
+    AdminDeveloperUpdateSerializer,
+    PendingPropertySerializer,
+    UserActiveUpdateSerializer,
+)
 
 broker_verify_schema = extend_schema(
     tags=["Admin"],
@@ -166,6 +171,59 @@ user_active_update_schema = extend_schema(
         401: OpenApiResponse(description="Unauthorized"),
         403: OpenApiResponse(description="Forbidden (admin only)"),
         404: OpenApiResponse(description="User not found"),
+    },
+)
+
+AdminDeveloperResponseSerializer = inline_serializer(
+    name="AdminDeveloperResponse",
+    fields={
+        "message": serializers.CharField(),
+        "user": TokenUserSerializer(),
+    },
+)
+
+
+admin_developer_create_schema = extend_schema(
+    tags=["Admin"],
+    summary="Create developer",
+    description=(
+        "Admin-only endpoint to create a developer account.\n\n"
+        "Behavior:\n"
+        "- creates User with role=developer\n"
+        "- creates related Developer profile with company_name\n"
+        "- returns created user payload"
+    ),
+    request=AdminDeveloperCreateSerializer,
+    responses={
+        201: OpenApiResponse(response=AdminDeveloperResponseSerializer),
+        400: OpenApiResponse(description="Validation error"),
+        401: OpenApiResponse(description="Unauthorized"),
+        403: OpenApiResponse(description="Forbidden (admin only)"),
+        409: OpenApiResponse(description="User already exists"),
+    },
+)
+
+
+admin_developer_update_schema = extend_schema(
+    tags=["Admin"],
+    summary="Update developer",
+    description=(
+        "Admin-only endpoint to update a developer account.\n\n"
+        "Updatable fields:\n"
+        "- email\n"
+        "- first_name\n"
+        "- last_name\n"
+        "- company_name\n\n"
+        "Path param `pk` is developer user id."
+    ),
+    request=AdminDeveloperUpdateSerializer,
+    responses={
+        200: OpenApiResponse(response=AdminDeveloperResponseSerializer),
+        400: OpenApiResponse(description="Validation error"),
+        401: OpenApiResponse(description="Unauthorized"),
+        403: OpenApiResponse(description="Forbidden (admin only)"),
+        404: OpenApiResponse(description="Developer not found"),
+        409: OpenApiResponse(description="User already exists"),
     },
 )
 

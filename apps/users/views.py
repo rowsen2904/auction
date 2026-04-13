@@ -14,13 +14,12 @@ from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
 from helpers.utils import get_client_ip
 
-from .models import Broker, Developer, UserDocument
+from .models import Broker, UserDocument
 from .schemas import (
     get_verification_code_schema,
     login_schema,
     refresh_schema,
     register_broker_schema,
-    register_developer_schema,
     resend_code_schema,
     verify_email_schema,
 )
@@ -31,7 +30,6 @@ from .serializers import (
     MeSerializer,
     MessageResponseSerializer,
     RegisterBrokerSerializer,
-    RegisterDeveloperSerializer,
     RegisterResponseSerializer,
     UnifiedDocumentSerializer,
     UserDocumentDeleteSerializer,
@@ -160,49 +158,6 @@ class ResendCodeView(generics.GenericAPIView):
             return Response(
                 {"error": "Не удалось отправить письмо. Попробуйте позже."},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            )
-
-
-class RegisterDeveloperView(generics.GenericAPIView):
-    permission_classes = [AllowAny]
-    serializer_class = RegisterDeveloperSerializer
-    parser_classes = [JSONParser]
-
-    @register_developer_schema
-    def post(self, request, *args, **kwargs):
-        serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-
-        email = serializer.validated_data["email"]
-        password = serializer.validated_data["password"]
-        first_name = serializer.validated_data.get("first_name", "")
-        last_name = serializer.validated_data.get("last_name", "")
-        company_name = serializer.validated_data.get("company_name", "")
-
-        try:
-            with transaction.atomic():
-                user = User.objects.create_user(
-                    email=email,
-                    password=password,
-                    first_name=first_name,
-                    last_name=last_name,
-                    role=User.Roles.DEVELOPER,
-                    is_active=True,
-                )
-                developer = Developer.objects.create(
-                    user=user,
-                    company_name=company_name,
-                )
-                user.developer = developer
-
-            clear_email_verified_for_registration(email)
-            payload = RegisterResponseSerializer.build_payload(user)
-            return Response(payload, status=status.HTTP_201_CREATED)
-
-        except IntegrityError:
-            return Response(
-                {"error": _("Пользователь уже существует.")},
-                status=status.HTTP_409_CONFLICT,
             )
 
 
