@@ -43,6 +43,7 @@ PROPERTIES_LIST_DOC = _(
     "- `address` (icontains)\n"
     "- `project` (icontains)\n"
     "- `purpose` (icontains)\n"
+    "- `commercial_subtype` (`retail` | `office`)\n"
     "- `rooms`\n"
     "- `price_min`, `price_max`\n"
     "- `area_min`, `area_max`\n"
@@ -147,6 +148,7 @@ properties_list_schema = extend_schema(
                                 "project_comment": "Первая очередь, вид на парк",
                                 "rooms": 2,
                                 "purpose": None,
+                                "commercial_subtype": None,
                                 "address": "Moscow, Tverskaya 1",
                                 "area": "52.50",
                                 "property_class": "comfort",
@@ -213,6 +215,12 @@ properties_list_schema = extend_schema(
         ),
         OpenApiParameter(
             name="purpose",
+            type=OpenApiTypes.STR,
+            required=False,
+            location=OpenApiParameter.QUERY,
+        ),
+        OpenApiParameter(
+            name="commercial_subtype",
             type=OpenApiTypes.STR,
             required=False,
             location=OpenApiParameter.QUERY,
@@ -294,6 +302,7 @@ my_properties_list_schema = extend_schema(
                                 "project_comment": "Первая очередь, вид на парк",
                                 "rooms": 2,
                                 "purpose": None,
+                                "commercial_subtype": None,
                                 "address": "Moscow, Tverskaya 1",
                                 "area": "52.50",
                                 "property_class": "comfort",
@@ -347,6 +356,12 @@ my_properties_list_schema = extend_schema(
         ),
         OpenApiParameter(
             "purpose", OpenApiTypes.STR, required=False, location=OpenApiParameter.QUERY
+        ),
+        OpenApiParameter(
+            "commercial_subtype",
+            OpenApiTypes.STR,
+            required=False,
+            location=OpenApiParameter.QUERY,
         ),
         OpenApiParameter(
             "rooms", OpenApiTypes.INT, required=False, location=OpenApiParameter.QUERY
@@ -417,6 +432,7 @@ properties_create_schema = extend_schema(
                         "project_comment": "Первая очередь, вид на парк",
                         "rooms": 2,
                         "purpose": None,
+                        "commercial_subtype": None,
                         "address": "Moscow, Tverskaya 1",
                         "area": "52.50",
                         "property_class": "comfort",

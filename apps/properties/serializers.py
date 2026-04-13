@@ -42,6 +42,7 @@ class PropertyListSerializer(serializers.ModelSerializer):
             "project_comment",
             "rooms",
             "purpose",
+            "commercial_subtype",
             "address",
             "area",
             "property_class",
@@ -121,6 +122,11 @@ class PropertyCreateSerializer(serializers.ModelSerializer):
     )
     rooms = serializers.IntegerField(required=False, allow_null=True, min_value=0)
     purpose = serializers.CharField(required=False, allow_null=True, allow_blank=True)
+    commercial_subtype = serializers.ChoiceField(
+        choices=Property.CommercialSubtypes.choices,
+        required=False,
+        allow_null=True,
+    )
     delivery_date = serializers.DateField(required=False, allow_null=True)
     developer_name = serializers.CharField(
         required=False, allow_blank=True, allow_null=True, default=""
@@ -143,6 +149,7 @@ class PropertyCreateSerializer(serializers.ModelSerializer):
             "project_comment",
             "rooms",
             "purpose",
+            "commercial_subtype",
             "address",
             "area",
             "property_class",
@@ -169,6 +176,18 @@ class PropertyCreateSerializer(serializers.ModelSerializer):
 
         if property_type == Property.PropertyTypes.LAND:
             attrs["property_class"] = None
+
+        commercial_subtype = attrs.get("commercial_subtype", None)
+        if property_type == Property.PropertyTypes.COMMERCIAL and not commercial_subtype:
+            raise serializers.ValidationError(
+                {
+                    "commercial_subtype": _(
+                        "Это поле обязательно для коммерческих объектов."
+                    )
+                }
+            )
+        if property_type != Property.PropertyTypes.COMMERCIAL:
+            attrs["commercial_subtype"] = None
 
         # Convert null to empty string for CharField fields
         for field in (
@@ -197,6 +216,11 @@ class PropertyUpdateSerializer(serializers.ModelSerializer):
     )
     rooms = serializers.IntegerField(required=False, allow_null=True, min_value=0)
     purpose = serializers.CharField(required=False, allow_null=True, allow_blank=True)
+    commercial_subtype = serializers.ChoiceField(
+        choices=Property.CommercialSubtypes.choices,
+        required=False,
+        allow_null=True,
+    )
     delivery_date = serializers.DateField(required=False, allow_null=True)
     developer_name = serializers.CharField(
         required=False, allow_blank=True, allow_null=True
@@ -215,6 +239,7 @@ class PropertyUpdateSerializer(serializers.ModelSerializer):
         "project_comment",
         "rooms",
         "purpose",
+        "commercial_subtype",
         "address",
         "area",
         "property_class",
@@ -236,6 +261,7 @@ class PropertyUpdateSerializer(serializers.ModelSerializer):
             "project_comment",
             "rooms",
             "purpose",
+            "commercial_subtype",
             "address",
             "area",
             "property_class",
@@ -261,6 +287,25 @@ class PropertyUpdateSerializer(serializers.ModelSerializer):
 
         if property_type == Property.PropertyTypes.LAND:
             attrs["property_class"] = None
+
+        if "type" in attrs or "commercial_subtype" in attrs:
+            commercial_subtype = attrs.get(
+                "commercial_subtype", self.instance.commercial_subtype
+            )
+            if (
+                property_type == Property.PropertyTypes.COMMERCIAL
+                and not commercial_subtype
+            ):
+                raise serializers.ValidationError(
+                    {
+                        "commercial_subtype": _(
+                            "Это поле обязательно для коммерческих объектов."
+                        )
+                    }
+                )
+
+        if property_type != Property.PropertyTypes.COMMERCIAL:
+            attrs["commercial_subtype"] = None
 
         # Convert null to empty string for CharField fields
         for field in (

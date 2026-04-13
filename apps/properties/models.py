@@ -32,6 +32,10 @@ class Property(models.Model):
         BUSINESS = "business", _("Business")
         PREMIUM = "premium", _("Premium")
 
+    class CommercialSubtypes(models.TextChoices):
+        RETAIL = "retail", _("Retail")
+        OFFICE = "office", _("Office")
+
     class PropertyStatuses(models.TextChoices):
         DRAFT = "draft", _("Draft")
         PUBLISHED = "published", _("Published")
@@ -90,6 +94,15 @@ class Property(models.Model):
     purpose = models.CharField(
         _("Назначение"),
         max_length=255,
+        null=True,
+        blank=True,
+        db_index=True,
+    )
+
+    commercial_subtype = models.CharField(
+        _("Подтип коммерции"),
+        max_length=32,
+        choices=CommercialSubtypes.choices,
         null=True,
         blank=True,
         db_index=True,

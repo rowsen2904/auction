@@ -176,6 +176,70 @@ class PropertyAPITests(BasePropertyTestCase):
         prop = Property.objects.get(address=address)
         self.assertEqual(prop.project_comment, "")
 
+    def test_create_commercial_property_with_subtype(self):
+        self.client.force_authenticate(user=self.dev1)
+
+        address = "Moscow, Commercial Retail"
+        resp = self.client.post(
+            BASE,
+            data={
+                "type": "commercial",
+                "address": address,
+                "commercial_subtype": "retail",
+                "area": "120.00",
+                "property_class": "business",
+                "price": "30000000.00",
+                "status": "draft",
+            },
+            format="json",
+        )
+        self.assertEqual(resp.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(resp.data["commercial_subtype"], "retail")
+
+        prop = Property.objects.get(address=address)
+        self.assertEqual(prop.commercial_subtype, "retail")
+
+    def test_create_commercial_property_without_subtype_rejected(self):
+        self.client.force_authenticate(user=self.dev1)
+
+        resp = self.client.post(
+            BASE,
+            data={
+                "type": "commercial",
+                "address": "Moscow, Commercial No Subtype",
+                "area": "120.00",
+                "property_class": "business",
+                "price": "30000000.00",
+                "status": "draft",
+            },
+            format="json",
+        )
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("commercial_subtype", resp.data)
+
+    def test_create_non_commercial_ignores_subtype(self):
+        self.client.force_authenticate(user=self.dev1)
+
+        address = "Moscow, Apartment Ignores Subtype"
+        resp = self.client.post(
+            BASE,
+            data={
+                "type": "apartment",
+                "address": address,
+                "commercial_subtype": "retail",
+                "area": "50.00",
+                "property_class": "comfort",
+                "price": "1000000.00",
+                "status": "draft",
+            },
+            format="json",
+        )
+        self.assertEqual(resp.status_code, status.HTTP_201_CREATED)
+        self.assertIsNone(resp.data["commercial_subtype"])
+
+        prop = Property.objects.get(address=address)
+        self.assertIsNone(prop.commercial_subtype)
+
     def test_list_properties_paginated(self):
         for i in range(21):
             self._create_property(

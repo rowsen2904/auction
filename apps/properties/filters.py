@@ -31,6 +31,7 @@ class BasePropertyFilter(filters.FilterSet):
             "address",
             "project",
             "purpose",
+            "commercial_subtype",
             "rooms",
             "price_min",
             "price_max",
