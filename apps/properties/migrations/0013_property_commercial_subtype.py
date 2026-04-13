@@ -4,7 +4,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("properties", "0011_property_project_comment"),
+        ("properties", "0012_merge_address_project_comment"),
     ]
 
     operations = [
