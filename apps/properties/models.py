@@ -133,6 +133,11 @@ class Property(models.Model):
         db_index=True,
     )
 
+    show_price_to_brokers = models.BooleanField(
+        _("Показывать прайсовую цену брокерам"),
+        default=True,
+    )
+
     commission_rate = models.DecimalField(
         _("Комиссия брокера (%)"),
         max_digits=5,

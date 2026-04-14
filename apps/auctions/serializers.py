@@ -114,6 +114,7 @@ class AuctionListSerializer(serializers.ModelSerializer):
 
     def get_deals_created(self, obj):
         from deals.models import Deal
+
         return Deal.objects.filter(auction_id=obj.id).exists()
 
 
@@ -385,6 +386,38 @@ class AuctionDetailSerializer(AuctionListSerializer):
 
     class Meta(AuctionListSerializer.Meta):
         fields = AuctionListSerializer.Meta.fields + ["bids", "myBid"]
+
+    def _should_hide_property_price_for_broker(self, prop: Property) -> bool:
+        request = self.context.get("request")
+        user = getattr(request, "user", None)
+
+        if not user or not user.is_authenticated:
+            return False
+
+        return (
+            getattr(user, "role", None) == "broker"
+            and prop.show_price_to_brokers is False
+        )
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+
+        if not data.get("properties"):
+            return data
+
+        hidden_property_ids = {
+            prop.id
+            for prop in instance.properties.all()
+            if self._should_hide_property_price_for_broker(prop)
+        }
+        if not hidden_property_ids:
+            return data
+
+        for prop_data in data["properties"]:
+            if prop_data.get("id") in hidden_property_ids:
+                prop_data["price"] = None
+
+        return data
 
     def get_bids(self, obj: Auction):
         request = self.context.get("request")

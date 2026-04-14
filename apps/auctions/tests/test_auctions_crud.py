@@ -139,6 +139,46 @@ class TestAuctionsCRUD(APITestCase, AuctionTestMixin):
         self.assertEqual(resp.status_code, status.HTTP_200_OK)
         self.assertEqual(len(resp.data["bids"]), 1)
 
+    def test_detail_closed_properties_hide_price_for_broker_when_disabled(self):
+        self.prop1.show_price_to_brokers = False
+        self.prop1.save(update_fields=["show_price_to_brokers"])
+
+        now = timezone.now()
+        auc = self.create_auction(
+            owner=self.dev1,
+            prop=self.prop1,
+            mode=Auction.Mode.CLOSED,
+            status_val=Auction.Status.ACTIVE,
+            start=now - timedelta(minutes=5),
+            end=now + timedelta(hours=1),
+        )
+
+        self.client.force_authenticate(user=self.broker1)
+        resp = self.client.get(f"{self.BASE}{auc.id}/", format="json")
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.assertEqual(resp.data["properties"][0]["id"], self.prop1.id)
+        self.assertIsNone(resp.data["properties"][0]["price"])
+
+    def test_detail_closed_properties_price_visible_for_developer_when_disabled(self):
+        self.prop1.show_price_to_brokers = False
+        self.prop1.save(update_fields=["show_price_to_brokers"])
+
+        now = timezone.now()
+        auc = self.create_auction(
+            owner=self.dev1,
+            prop=self.prop1,
+            mode=Auction.Mode.CLOSED,
+            status_val=Auction.Status.ACTIVE,
+            start=now - timedelta(minutes=5),
+            end=now + timedelta(hours=1),
+        )
+
+        self.client.force_authenticate(user=self.dev1)
+        resp = self.client.get(f"{self.BASE}{auc.id}/", format="json")
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.assertEqual(resp.data["properties"][0]["id"], self.prop1.id)
+        self.assertEqual(resp.data["properties"][0]["price"], "1000000.00")
+
     @patch("auctions.serializers.schedule_auction_status_tasks")
     def test_create_success_creates_scheduled_and_schedules(self, schedule_mock):
         self.client.force_authenticate(user=self.dev1)
