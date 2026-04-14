@@ -4,6 +4,41 @@ from django.conf import settings
 from django.db import migrations, models
 
 
+def deduplicate_open_bids(apps, schema_editor):
+    """
+    For each (auction, broker) pair with multiple open (is_sealed=False) bids,
+    keep only the one with the highest amount (tie-break: latest created_at)
+    and delete the rest.
+    """
+    Bid = apps.get_model("auctions", "Bid")
+    db_alias = schema_editor.connection.alias
+
+    from django.db.models import Max
+
+    # Find (auction, broker) pairs that have duplicates
+    duplicates = (
+        Bid.objects.using(db_alias)
+        .filter(is_sealed=False)
+        .values("auction_id", "broker_id")
+        .annotate(cnt=models.Count("id"))
+        .filter(cnt__gt=1)
+    )
+
+    for dup in duplicates:
+        bids = (
+            Bid.objects.using(db_alias)
+            .filter(
+                auction_id=dup["auction_id"],
+                broker_id=dup["broker_id"],
+                is_sealed=False,
+            )
+            .order_by("-amount", "-created_at")
+        )
+        # Keep the first (highest amount, latest), delete the rest
+        keep_id = bids.first().id
+        bids.exclude(id=keep_id).delete()
+
+
 class Migration(migrations.Migration):
 
     dependencies = [
@@ -16,6 +51,10 @@ class Migration(migrations.Migration):
             model_name="bid",
             name="updated_at",
             field=models.DateTimeField(auto_now=True),
+        ),
+        migrations.RunPython(
+            deduplicate_open_bids,
+            reverse_code=migrations.RunPython.noop,
         ),
         migrations.AddConstraint(
             model_name="bid",
