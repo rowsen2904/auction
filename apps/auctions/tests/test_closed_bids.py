@@ -63,6 +63,50 @@ class TestClosedBids(APITestCase, AuctionTestMixin):
         self.assertEqual(kwargs["auction_id"], auc.id)
         self.assertEqual(kwargs["user_id"], self.broker1.id)
 
+    def test_closed_bid_create_allows_amount_below_min_price(self):
+        now = timezone.now()
+        auc = self.create_auction(
+            owner=self.dev1,
+            prop=self.prop1,
+            mode=Auction.Mode.CLOSED,
+            status_val=Auction.Status.ACTIVE,
+            start=now - timedelta(minutes=1),
+            end=now + timedelta(hours=1),
+            min_price=Decimal("1000.00"),
+        )
+
+        self.client.force_authenticate(user=self.broker1)
+        resp = self.client.post(
+            f"{self.BASE}{auc.id}/bid/",
+            data={"amount": "100.00"},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, status.HTTP_201_CREATED)
+
+        bid = Bid.objects.get(id=resp.data["id"])
+        self.assertEqual(bid.amount, Decimal("100.00"))
+
+    def test_closed_bid_create_rejects_zero_amount(self):
+        now = timezone.now()
+        auc = self.create_auction(
+            owner=self.dev1,
+            prop=self.prop1,
+            mode=Auction.Mode.CLOSED,
+            status_val=Auction.Status.ACTIVE,
+            start=now - timedelta(minutes=1),
+            end=now + timedelta(hours=1),
+            min_price=Decimal("1000.00"),
+        )
+
+        self.client.force_authenticate(user=self.broker1)
+        resp = self.client.post(
+            f"{self.BASE}{auc.id}/bid/",
+            data={"amount": "0.00"},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("amount", resp.data)
+
     def test_closed_bid_create_only_one_bid_per_broker(self):
         now = timezone.now()
         auc = self.create_auction(
@@ -110,6 +154,35 @@ class TestClosedBids(APITestCase, AuctionTestMixin):
 
         bid.refresh_from_db()
         self.assertEqual(bid.amount, Decimal("2500.00"))
+
+    def test_closed_bid_update_allows_amount_below_min_price(self):
+        now = timezone.now()
+        auc = self.create_auction(
+            owner=self.dev1,
+            prop=self.prop1,
+            mode=Auction.Mode.CLOSED,
+            status_val=Auction.Status.ACTIVE,
+            start=now - timedelta(minutes=1),
+            end=now + timedelta(hours=1),
+            min_price=Decimal("1000.00"),
+        )
+        bid = self.create_bid(
+            auction=auc,
+            broker=self.broker1,
+            amount=Decimal("1500.00"),
+            is_sealed=True,
+        )
+
+        self.client.force_authenticate(user=self.broker1)
+        resp = self.client.patch(
+            f"{self.BASE}{auc.id}/bid/update/",
+            data={"amount": "100.00"},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+
+        bid.refresh_from_db()
+        self.assertEqual(bid.amount, Decimal("100.00"))
 
     def test_closed_bid_update_forbidden_if_not_active(self):
         now = timezone.now()

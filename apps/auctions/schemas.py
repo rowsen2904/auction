@@ -137,7 +137,7 @@ Rules:
 - broker must be verified
 - owner cannot bid on own auction
 - one sealed bid per broker per auction
-- amount must be >= min_price
+- amount must be >= 0.01
 
 Note:
 - bid is for the WHOLE LOT, not for a single property.
@@ -148,7 +148,7 @@ Update your sealed bid for CLOSED auction while ACTIVE.
 
 Rules:
 - only own sealed bid can be updated
-- amount must remain >= min_price
+- amount must remain >= 0.01
 - broker must be verified
 - owner cannot bid
 - deleting/cancelling sealed bid is not allowed by current business flow

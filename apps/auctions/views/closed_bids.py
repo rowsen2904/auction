@@ -17,7 +17,6 @@ from auctions.services.rules import (
     ctx_for,
     ensure_active_window,
     ensure_broker_verified,
-    ensure_min_price,
     ensure_mode,
     ensure_not_owner,
     is_admin,
@@ -139,7 +138,6 @@ class ClosedBidCreateView(generics.CreateAPIView):
             )
             ensure_active_window(ctx)
             ensure_not_owner(ctx)
-            ensure_min_price(ctx, amount=amount)
 
             if Bid.objects.filter(
                 auction_id=auction.id,
@@ -233,7 +231,6 @@ class MyClosedBidUpdateView(generics.GenericAPIView):
             )
             ensure_active_window(ctx)
             ensure_not_owner(ctx)
-            ensure_min_price(ctx, amount=amount)
 
             bid = get_object_or_404(
                 Bid.objects.select_for_update().only(
