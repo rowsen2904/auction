@@ -73,8 +73,7 @@ def _participants_snapshot(auction_id: int) -> list[int]:
     return list_participants(auction_id=auction_id)
 
 
-@database_sync_to_async
-def _place_open_bid_atomic(
+def _place_open_bid_atomic_sync(
     *,
     auction_id: int,
     user,
@@ -180,6 +179,9 @@ def _place_open_bid_atomic(
         }
 
         return auction_patch, BidSerializer(bid).data, participant_event, is_new_bid
+
+
+_place_open_bid_atomic = database_sync_to_async(_place_open_bid_atomic_sync)
 
 
 @database_sync_to_async
