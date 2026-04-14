@@ -246,6 +246,7 @@ class Bid(models.Model):
     # This allows a partial unique constraint for sealed only.
     is_sealed = models.BooleanField(default=False, db_index=True)
     created_at = models.DateTimeField(default=timezone.now, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         ordering = ["-created_at"]
@@ -269,6 +270,12 @@ class Bid(models.Model):
                 fields=["auction", "broker"],
                 condition=Q(is_sealed=True),
                 name="bid_unique_sealed_per_broker_per_auction",
+            ),
+            # One open bid per broker per auction
+            models.UniqueConstraint(
+                fields=["auction", "broker"],
+                condition=Q(is_sealed=False),
+                name="bid_unique_open_per_broker_per_auction",
             ),
         ]
 

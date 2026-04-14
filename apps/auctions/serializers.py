@@ -72,8 +72,8 @@ class BidSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Bid
-        fields = ["id", "auction_id", "broker_id", "amount", "created_at"]
-        read_only_fields = ["id", "auction_id", "broker_id", "created_at"]
+        fields = ["id", "auction_id", "broker_id", "amount", "created_at", "updated_at"]
+        read_only_fields = ["id", "auction_id", "broker_id", "created_at", "updated_at"]
 
 
 class AuctionListSerializer(serializers.ModelSerializer):

@@ -368,6 +368,6 @@ class ClosedBidsListForOwnerAdminView(generics.ListAPIView):
         return (
             Bid.objects.filter(auction_id=auction.id, is_sealed=True)
             .select_related("broker")
-            .only("id", "auction_id", "broker_id", "amount", "created_at")
+            .only("id", "auction_id", "broker_id", "amount", "created_at", "updated_at")
             .order_by("-amount", "-created_at")
         )

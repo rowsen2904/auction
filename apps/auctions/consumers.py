@@ -62,7 +62,7 @@ def _last_bids(auction_id: int, limit: int = 50) -> list[dict]:
     qs = (
         Bid.objects.filter(auction_id=auction_id)
         .select_related("broker")
-        .only("id", "auction_id", "broker_id", "amount", "created_at")
+        .only("id", "auction_id", "broker_id", "amount", "created_at", "updated_at")
         .order_by("-created_at")[:limit]
     )
     return BidSerializer(qs, many=True).data
@@ -74,12 +74,17 @@ def _participants_snapshot(auction_id: int) -> list[int]:
 
 
 @database_sync_to_async
-def _create_open_bid_atomic(
+def _place_open_bid_atomic(
     *,
     auction_id: int,
     user,
     requested_amount: Decimal,
-) -> tuple[dict, dict, dict | None]:
+) -> tuple[dict, dict, dict | None, bool]:
+    """
+    Place or update a broker's single open bid.
+
+    Returns (auction_patch, bid_data, participant_event | None, is_new_bid).
+    """
     with transaction.atomic():
         auction = get_object_or_404(
             Auction.objects.select_for_update().only(
@@ -113,14 +118,34 @@ def _create_open_bid_atomic(
         amount = open_compute_amount(auction=auction, requested=requested_amount)
         ensure_min_price(ctx, amount=amount)
 
-        bid = Bid.objects.create(
-            auction_id=auction.id,
-            broker=user,
-            amount=amount,
-            is_sealed=False,
+        existing_bid = (
+            Bid.objects.filter(
+                auction_id=auction.id,
+                broker=user,
+                is_sealed=False,
+            )
+            .select_for_update()
+            .first()
         )
 
-        auction.bids_count += 1
+        if existing_bid:
+            existing_bid.amount = amount
+            existing_bid.save(update_fields=["amount", "updated_at"])
+            bid = existing_bid
+            is_new_bid = False
+        else:
+            bid = Bid.objects.create(
+                auction_id=auction.id,
+                broker=user,
+                amount=amount,
+                is_sealed=False,
+            )
+            is_new_bid = True
+
+        # bids_count = number of unique participants (distinct bids)
+        auction.bids_count = Bid.objects.filter(
+            auction_id=auction.id, is_sealed=False
+        ).count()
         auction.current_price = amount
         auction.highest_bid_id = bid.id
         auction.save(
@@ -132,14 +157,14 @@ def _create_open_bid_atomic(
             ]
         )
 
-        cnt, is_new = add_participant_with_flag(
+        cnt, is_new_participant = add_participant_with_flag(
             auction_id=auction.id,
             user_id=user.id,
             end_date=auction.end_date,
         )
 
         participant_event = None
-        if is_new:
+        if is_new_participant:
             participant_event = {
                 "auction_id": auction.id,
                 "user_id": user.id,
@@ -154,7 +179,7 @@ def _create_open_bid_atomic(
             "updated_at": auction.updated_at.isoformat(),
         }
 
-        return auction_patch, BidSerializer(bid).data, participant_event
+        return auction_patch, BidSerializer(bid).data, participant_event, is_new_bid
 
 
 @database_sync_to_async
@@ -194,7 +219,7 @@ def _closed_bids_snapshot_for_user(
     qs = (
         Bid.objects.filter(auction_id=auction.id, is_sealed=True)
         .select_related("broker")
-        .only("id", "auction_id", "broker_id", "amount", "created_at")
+        .only("id", "auction_id", "broker_id", "amount", "created_at", "updated_at")
         .order_by("-amount", "-created_at")
     )
 
@@ -271,10 +296,12 @@ class AuctionLiveBidConsumer(AsyncJsonWebsocketConsumer):
             return
 
         try:
-            auction_patch, bid_data, participant_event = await _create_open_bid_atomic(
-                auction_id=self.auction_id,
-                user=user,
-                requested_amount=requested_amount,
+            auction_patch, bid_data, participant_event, is_new_bid = (
+                await _place_open_bid_atomic(
+                    auction_id=self.auction_id,
+                    user=user,
+                    requested_amount=requested_amount,
+                )
             )
         except ValidationError as e:
             await self.send_json({"type": "error", "detail": e.detail})
@@ -289,14 +316,20 @@ class AuctionLiveBidConsumer(AsyncJsonWebsocketConsumer):
                 {"type": "participant_joined", "payload": participant_event},
             )
 
+        event_type = "bid_created" if is_new_bid else "bid_updated"
         await self.channel_layer.group_send(
             self.group_name,
-            {"type": "bid_created", "auction": auction_patch, "bid": bid_data},
+            {"type": event_type, "auction": auction_patch, "bid": bid_data},
         )
 
     async def bid_created(self, event):
         await self.send_json(
             {"type": "bid_created", "auction": event["auction"], "bid": event["bid"]}
+        )
+
+    async def bid_updated(self, event):
+        await self.send_json(
+            {"type": "bid_updated", "auction": event["auction"], "bid": event["bid"]}
         )
 
     async def auction_updated(self, event):
