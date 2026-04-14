@@ -164,7 +164,7 @@ class ClosedBidCreateView(generics.CreateAPIView):
             )
             was_added = _extract_was_added(participant_result)
 
-            auction_patch = _recalc_closed_auction_state(auction=auction)
+            _recalc_closed_auction_state(auction=auction)
             bid_data = BidSerializer(bid).data
             participants = auction_participants.list_participants(auction_id=auction.id)
 
@@ -172,7 +172,6 @@ class ClosedBidCreateView(generics.CreateAPIView):
                 broadcast_sealed_bid_changed(
                     auction_id=auction.id,
                     action="created",
-                    auction_payload=auction_patch,
                     bid_payload=bid_data,
                 )
                 if was_added:
@@ -253,14 +252,13 @@ class MyClosedBidUpdateView(generics.GenericAPIView):
             bid.amount = amount
             bid.save(update_fields=["amount"])
 
-            auction_patch = _recalc_closed_auction_state(auction=auction)
+            _recalc_closed_auction_state(auction=auction)
             bid_data = BidSerializer(bid).data
 
             transaction.on_commit(
                 lambda: broadcast_sealed_bid_changed(
                     auction_id=auction.id,
                     action="updated",
-                    auction_payload=auction_patch,
                     bid_payload=bid_data,
                 )
             )
@@ -318,7 +316,7 @@ class MyClosedBidUpdateView(generics.GenericAPIView):
             deleted_bid_id = bid.id
             bid.delete()
 
-            auction_patch = _recalc_closed_auction_state(auction=auction)
+            _recalc_closed_auction_state(auction=auction)
 
             auction_participants.participants_count(auction_id=auction.id)
             auction_participants.remove_participant(
@@ -331,7 +329,6 @@ class MyClosedBidUpdateView(generics.GenericAPIView):
                 broadcast_sealed_bid_changed(
                     auction_id=auction.id,
                     action="deleted",
-                    auction_payload=auction_patch,
                     bid_payload={"id": deleted_bid_id},
                 )
                 _broadcast_sealed_participants_changed(

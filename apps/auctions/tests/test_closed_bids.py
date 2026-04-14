@@ -174,7 +174,7 @@ class TestClosedBids(APITestCase, AuctionTestMixin):
         _, kwargs = bid_changed_mock.call_args
         self.assertEqual(kwargs["auction_id"], auc.id)
         self.assertEqual(kwargs["action"], "created")
-        self.assertEqual(kwargs["auction_payload"]["id"], auc.id)
+        self.assertNotIn("auction_payload", kwargs)
         self.assertEqual(kwargs["bid_payload"]["id"], resp.data["id"])
 
     @patch("auctions.views.closed_bids._broadcast_sealed_participants_changed")

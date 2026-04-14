@@ -179,6 +179,62 @@ class TestAuctionsCRUD(APITestCase, AuctionTestMixin):
         self.assertEqual(resp.data["properties"][0]["id"], self.prop1.id)
         self.assertEqual(resp.data["properties"][0]["price"], "1000000.00")
 
+    def test_detail_closed_hides_summary_for_broker_but_keeps_my_bid(self):
+        now = timezone.now()
+        auc = self.create_auction(
+            owner=self.dev1,
+            prop=self.prop1,
+            mode=Auction.Mode.CLOSED,
+            status_val=Auction.Status.ACTIVE,
+            start=now - timedelta(minutes=5),
+            end=now + timedelta(hours=1),
+            min_price=Decimal("1000.00"),
+        )
+        bid = self.create_bid(
+            auction=auc,
+            broker=self.broker1,
+            amount=Decimal("1500.00"),
+            is_sealed=True,
+        )
+        auc.bids_count = 1
+        auc.current_price = Decimal("1500.00")
+        auc.save(update_fields=["bids_count", "current_price", "updated_at"])
+
+        self.client.force_authenticate(user=self.broker1)
+        resp = self.client.get(f"{self.BASE}{auc.id}/", format="json")
+
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.assertIsNone(resp.data["min_price"])
+        self.assertIsNone(resp.data["current_price"])
+        self.assertIsNone(resp.data["bids_count"])
+        self.assertIsNotNone(resp.data["myBid"])
+        self.assertEqual(resp.data["myBid"]["id"], bid.id)
+        self.assertEqual(resp.data["myBid"]["amount"], "1500.00")
+
+    def test_list_closed_hides_summary_for_broker(self):
+        now = timezone.now()
+        auc = self.create_auction(
+            owner=self.dev1,
+            prop=self.prop1,
+            mode=Auction.Mode.CLOSED,
+            status_val=Auction.Status.ACTIVE,
+            start=now - timedelta(minutes=5),
+            end=now + timedelta(hours=1),
+            min_price=Decimal("2000.00"),
+        )
+        auc.bids_count = 3
+        auc.current_price = Decimal("2750.00")
+        auc.save(update_fields=["bids_count", "current_price", "updated_at"])
+
+        self.client.force_authenticate(user=self.broker1)
+        resp = self.client.get(self.BASE, format="json")
+
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        item = next(x for x in resp.data["results"] if x["id"] == auc.id)
+        self.assertIsNone(item["min_price"])
+        self.assertIsNone(item["current_price"])
+        self.assertIsNone(item["bids_count"])
+
     @patch("auctions.serializers.schedule_auction_status_tasks")
     def test_create_success_creates_scheduled_and_schedules(self, schedule_mock):
         self.client.force_authenticate(user=self.dev1)

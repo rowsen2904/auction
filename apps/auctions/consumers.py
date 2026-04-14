@@ -177,6 +177,11 @@ def _closed_bids_snapshot_for_user(
     if auction.mode != Auction.Mode.CLOSED:
         raise ValidationError({"detail": "Только для закрытых аукционов."})
 
+    if getattr(user, "is_broker", False):
+        raise PermissionDenied(
+            "Брокеру запрещён доступ к данным закрытых заявок " "через WebSocket."
+        )
+
     is_admin = bool(
         getattr(user, "is_staff", False) or getattr(user, "is_superuser", False)
     )
@@ -317,6 +322,10 @@ class ClosedAuctionBidsConsumer(AsyncJsonWebsocketConsumer):
         user = self.scope.get("user")
         if not user or not getattr(user, "is_authenticated", False):
             await self.close(code=4401)
+            return
+
+        if getattr(user, "is_broker", False):
+            await self.close(code=4403)
             return
 
         try:

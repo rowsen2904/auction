@@ -117,6 +117,28 @@ class AuctionListSerializer(serializers.ModelSerializer):
 
         return Deal.objects.filter(auction_id=obj.id).exists()
 
+    def _is_broker_request(self) -> bool:
+        request = self.context.get("request")
+        user = getattr(request, "user", None)
+        return bool(
+            user and user.is_authenticated and getattr(user, "is_broker", False)
+        )
+
+    def _hide_closed_summary_for_broker(self, obj: Auction, data: dict) -> None:
+        if obj.mode != Auction.Mode.CLOSED:
+            return
+        if not self._is_broker_request():
+            return
+
+        data["min_price"] = None
+        data["current_price"] = None
+        data["bids_count"] = None
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        self._hide_closed_summary_for_broker(instance, data)
+        return data
+
 
 class AuctionCreateSerializer(serializers.ModelSerializer):
     # new contract

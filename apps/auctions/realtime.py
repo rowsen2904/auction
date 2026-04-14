@@ -16,7 +16,6 @@ def broadcast_sealed_bid_changed(
     *,
     auction_id: int,
     action: str,
-    auction_payload: dict,
     bid_payload: dict,
 ) -> None:
     channel_layer = get_channel_layer()
@@ -29,7 +28,6 @@ def broadcast_sealed_bid_changed(
             "type": "sealed_bid_changed",
             "payload": {
                 "action": action,
-                "auction": auction_payload,
                 "bid": bid_payload,
             },
         },
