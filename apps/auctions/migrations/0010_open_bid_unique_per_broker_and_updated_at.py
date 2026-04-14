@@ -13,8 +13,6 @@ def deduplicate_open_bids(apps, schema_editor):
     Bid = apps.get_model("auctions", "Bid")
     db_alias = schema_editor.connection.alias
 
-    from django.db.models import Max
-
     # Find (auction, broker) pairs that have duplicates
     duplicates = (
         Bid.objects.using(db_alias)
@@ -55,13 +53,5 @@ class Migration(migrations.Migration):
         migrations.RunPython(
             deduplicate_open_bids,
             reverse_code=migrations.RunPython.noop,
-        ),
-        migrations.AddConstraint(
-            model_name="bid",
-            constraint=models.UniqueConstraint(
-                condition=models.Q(("is_sealed", False)),
-                fields=("auction", "broker"),
-                name="bid_unique_open_per_broker_per_auction",
-            ),
         ),
     ]
