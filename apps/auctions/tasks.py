@@ -159,6 +159,12 @@ def finish_auction(self, auction_id: int) -> None:
                     real_property=prop,
                 )
 
+        # CLOSED: auto-select winner (highest amount, earliest on tie)
+        if auction.mode == Auction.Mode.CLOSED:
+            from .services.assignments import auto_select_closed_winner
+
+            auto_select_closed_winner(auction=auction)
+
         broadcast_auction_status(
             auction_id=auction.id,
             payload={
