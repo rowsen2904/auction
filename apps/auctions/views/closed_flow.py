@@ -6,7 +6,7 @@ from auctions.serializers import (
     ClosedSelectWinnerSerializer,
     ClosedShortlistSerializer,
 )
-from auctions.services.assignments import select_closed_auction_winners
+from auctions.services.assignments import select_closed_auction_winner
 from auctions.services.rules import is_admin
 from django.db import transaction
 from django.shortcuts import get_object_or_404
@@ -115,16 +115,16 @@ class ClosedSelectWinnerView(APIView):
                     "Победителей может выбрать только владелец/администратор."
                 )
 
-            bids = select_closed_auction_winners(
+            bid = select_closed_auction_winner(
                 auction=auction,
-                broker_ids=ser.validated_data["broker_ids"],
+                broker_id=ser.validated_data["broker_id"],
             )
 
         return Response(
             {
                 "auctionId": auction.id,
-                "selectedBrokerIds": [bid.broker_id for bid in bids],
-                "selectedBidIds": [bid.id for bid in bids],
+                "selectedBrokerId": bid.broker_id,
+                "selectedBidId": bid.id,
             },
             status=status.HTTP_200_OK,
         )

@@ -524,57 +524,16 @@ class ClosedShortlistSerializer(serializers.Serializer):
         return {"bid_ids": ret["bidIds"]}
 
 
-class AuctionSelectWinnersSerializer(serializers.Serializer):
-    brokerIds = serializers.ListField(
-        child=serializers.IntegerField(min_value=1),
-        allow_empty=False,
-    )
-
-    def to_internal_value(self, data):
-        normalized = {
-            "brokerIds": data.get("brokerIds", data.get("broker_ids")),
-        }
-        ret = super().to_internal_value(normalized)
-        return {"broker_ids": ret["brokerIds"]}
-
-
-class ClosedSelectWinnerSerializer(AuctionSelectWinnersSerializer):
-    pass
-
-
-class AuctionAssignmentItemSerializer(serializers.Serializer):
+class AuctionSelectWinnerSerializer(serializers.Serializer):
     brokerId = serializers.IntegerField(min_value=1)
-    propertyIds = serializers.ListField(
-        child=serializers.IntegerField(min_value=1),
-        allow_empty=False,
-    )
 
     def to_internal_value(self, data):
         normalized = {
             "brokerId": data.get("brokerId", data.get("broker_id")),
-            "propertyIds": data.get("propertyIds", data.get("property_ids")),
         }
         ret = super().to_internal_value(normalized)
-        return {
-            "broker_id": ret["brokerId"],
-            "property_ids": ret["propertyIds"],
-        }
+        return {"broker_id": ret["brokerId"]}
 
 
-class AuctionAssignSerializer(serializers.Serializer):
-    assignments = AuctionAssignmentItemSerializer(many=True)
-
-    def validate(self, attrs):
-        seen = set()
-        for item in attrs["assignments"]:
-            for property_id in item["property_ids"]:
-                if property_id in seen:
-                    raise serializers.ValidationError(
-                        {
-                            "assignments": (
-                                f"Объект {property_id} указан более одного раза."
-                            )
-                        }
-                    )
-                seen.add(property_id)
-        return attrs
+class ClosedSelectWinnerSerializer(AuctionSelectWinnerSerializer):
+    pass

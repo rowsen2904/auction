@@ -10,11 +10,10 @@ from drf_spectacular.utils import (
 from rest_framework import serializers
 
 from .serializers import (
-    AuctionAssignSerializer,
     AuctionCreateSerializer,
     AuctionDetailSerializer,
     AuctionListSerializer,
-    AuctionSelectWinnersSerializer,
+    AuctionSelectWinnerSerializer,
     BidCreateSerializer,
     BidSerializer,
     BidUpdateSerializer,
@@ -474,48 +473,20 @@ closed_shortlist_schema = extend_schema(
 )
 
 auction_select_winners_schema = extend_schema(
-    summary="Select winners (CLOSED)",
+    summary="Select winner (CLOSED)",
     description=AUCTION_SELECT_WINNERS_DOC,
-    request=AuctionSelectWinnersSerializer,
+    request=AuctionSelectWinnerSerializer,
     responses={
         200: OpenApiResponse(
             response=inline_serializer(
-                name="AuctionSelectWinnersResponse",
+                name="AuctionSelectWinnerResponse",
                 fields={
                     "auctionId": serializers.IntegerField(),
-                    "selectedBrokerIds": serializers.ListField(
-                        child=serializers.IntegerField()
-                    ),
-                    "selectedBidIds": serializers.ListField(
-                        child=serializers.IntegerField()
-                    ),
+                    "selectedBrokerId": serializers.IntegerField(),
+                    "selectedBidId": serializers.IntegerField(),
                 },
             ),
-            description="Winning brokers selected.",
-        ),
-        400: OpenApiResponse(response=DRFDetailErrorSerializer),
-        401: OpenApiResponse(response=DRFDetailErrorSerializer),
-        403: OpenApiResponse(response=DRFDetailErrorSerializer),
-        404: OpenApiResponse(description="Auction not found."),
-    },
-    tags=["Closed Flow"],
-)
-
-auction_assign_schema = extend_schema(
-    summary="Assign properties to winners (CLOSED)",
-    description=AUCTION_ASSIGN_DOC,
-    request=AuctionAssignSerializer,
-    responses={
-        201: OpenApiResponse(
-            response=inline_serializer(
-                name="AuctionAssignResponse",
-                fields={
-                    "auctionId": serializers.IntegerField(),
-                    "dealsCount": serializers.IntegerField(),
-                    "dealIds": serializers.ListField(child=serializers.IntegerField()),
-                },
-            ),
-            description="Deals created after property assignment.",
+            description="Winning broker selected.",
         ),
         400: OpenApiResponse(response=DRFDetailErrorSerializer),
         401: OpenApiResponse(response=DRFDetailErrorSerializer),
@@ -526,21 +497,17 @@ auction_assign_schema = extend_schema(
 )
 
 closed_select_winner_schema = extend_schema(
-    summary="Select winner(s) from shortlist (CLOSED)",
+    summary="Select winner from shortlist (CLOSED)",
     description=CLOSED_SELECT_WINNER_DOC,
-    request=AuctionSelectWinnersSerializer,
+    request=AuctionSelectWinnerSerializer,
     responses={
         200: OpenApiResponse(
             response=inline_serializer(
                 name="ClosedSelectWinnerResponse",
                 fields={
                     "auctionId": serializers.IntegerField(),
-                    "selectedBrokerIds": serializers.ListField(
-                        child=serializers.IntegerField()
-                    ),
-                    "selectedBidIds": serializers.ListField(
-                        child=serializers.IntegerField()
-                    ),
+                    "selectedBrokerId": serializers.IntegerField(),
+                    "selectedBidId": serializers.IntegerField(),
                 },
             ),
             description="Winner selection stored.",

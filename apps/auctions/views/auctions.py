@@ -5,7 +5,6 @@ from auctions.models import Auction
 from auctions.paginations import AuctionPagination
 from auctions.permissions import IsDeveloper
 from auctions.schemas import (
-    auction_assign_schema,
     auction_create_schema,
     auction_detail_schema,
     auction_list_schema,
@@ -13,16 +12,12 @@ from auctions.schemas import (
     my_auctions_schema,
 )
 from auctions.serializers import (
-    AuctionAssignSerializer,
     AuctionCreateSerializer,
     AuctionDetailSerializer,
     AuctionListSerializer,
-    AuctionSelectWinnersSerializer,
+    AuctionSelectWinnerSerializer,
 )
-from auctions.services.assignments import (
-    assign_closed_auction_properties,
-    select_closed_auction_winners,
-)
+from auctions.services.assignments import select_closed_auction_winner
 from django.shortcuts import get_object_or_404
 from rest_framework import generics, status
 from rest_framework.exceptions import PermissionDenied
@@ -153,12 +148,12 @@ class AuctionDetailView(generics.RetrieveAPIView):
         return super().get(request, *args, **kwargs)
 
 
-class AuctionSelectWinnersView(APIView):
+class AuctionSelectWinnerView(APIView):
     permission_classes = [IsAuthenticated, IsDeveloper]
 
     @auction_select_winners_schema
     def post(self, request, pk: int):
-        serializer = AuctionSelectWinnersSerializer(data=request.data)
+        serializer = AuctionSelectWinnerSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
         auction = get_object_or_404(
@@ -168,52 +163,19 @@ class AuctionSelectWinnersView(APIView):
 
         if auction.owner_id != request.user.id:
             raise PermissionDenied(
-                "Только владелец аукциона может выбирать победителей."
+                "Только владелец аукциона может выбирать победителя."
             )
 
-        bids = select_closed_auction_winners(
+        bid = select_closed_auction_winner(
             auction=auction,
-            broker_ids=serializer.validated_data["broker_ids"],
+            broker_id=serializer.validated_data["broker_id"],
         )
 
         return Response(
             {
                 "auctionId": auction.id,
-                "selectedBrokerIds": [bid.broker_id for bid in bids],
-                "selectedBidIds": [bid.id for bid in bids],
+                "selectedBrokerId": bid.broker_id,
+                "selectedBidId": bid.id,
             },
             status=status.HTTP_200_OK,
-        )
-
-
-class AuctionAssignView(APIView):
-    permission_classes = [IsAuthenticated, IsDeveloper]
-
-    @auction_assign_schema
-    def post(self, request, pk: int):
-        serializer = AuctionAssignSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-
-        auction = get_object_or_404(
-            _auction_base_queryset(),
-            pk=pk,
-        )
-
-        if auction.owner_id != request.user.id:
-            raise PermissionDenied(
-                "Только владелец аукциона может распределять объекты."
-            )
-
-        deals = assign_closed_auction_properties(
-            auction=auction,
-            assignments=serializer.validated_data["assignments"],
-        )
-
-        return Response(
-            {
-                "auctionId": auction.id,
-                "dealsCount": len(deals),
-                "dealIds": [deal.id for deal in deals],
-            },
-            status=status.HTTP_201_CREATED,
         )

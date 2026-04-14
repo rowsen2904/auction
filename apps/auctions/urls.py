@@ -1,7 +1,6 @@
 from django.urls import path
 
 from .views.auctions import (
-    AuctionAssignView,
     AuctionDetailView,
     AuctionListCreateView,
     MyAuctionListView,
@@ -44,10 +43,5 @@ urlpatterns = [
         "<int:pk>/select-winner/",
         ClosedSelectWinnerView.as_view(),
         name="closed-select-winner",
-    ),
-    path(
-        "<int:pk>/assign/",
-        AuctionAssignView.as_view(),
-        name="auction-assign",
     ),
 ]
