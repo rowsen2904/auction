@@ -187,8 +187,8 @@ class AuctionCreateSerializer(serializers.ModelSerializer):
         min_bid_increment = attrs.get("min_bid_increment")
         now = timezone.now()
 
-        min_offset = getattr(settings, "AUCTION_MIN_START_OFFSET", timedelta(seconds=1))
-        min_dur = getattr(settings, "AUCTION_MIN_DURATION", timedelta(hours=1))
+        min_offset = getattr(settings, "AUCTION_MIN_START_OFFSET", timedelta(hours=1))
+        min_dur = getattr(settings, "AUCTION_MIN_DURATION", timedelta(hours=12))
         max_dur = getattr(settings, "AUCTION_MAX_DURATION", timedelta(days=30))
 
         camel_single = attrs.pop("propertyId", None)

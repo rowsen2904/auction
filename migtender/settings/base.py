@@ -307,8 +307,8 @@ CELERY_ENABLE_UTC = True
 
 # TODO: Must set these
 # Auction timing rules
-AUCTION_MIN_START_OFFSET = timedelta(seconds=1)  # start must be at least +1h from now
-AUCTION_MIN_DURATION = timedelta(seconds=1)  # min duration
+AUCTION_MIN_START_OFFSET = timedelta(hours=1)  # start must be at least +1h from now
+AUCTION_MIN_DURATION = timedelta(hours=12)  # min duration
 AUCTION_MAX_DURATION = timedelta(days=30)  # max duration
 # <=10 min to start => only admin can cancel
 AUCTION_CANCEL_LOCK_BEFORE_START = timedelta(minutes=10)
