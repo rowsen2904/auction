@@ -5,6 +5,7 @@ from auctions.schemas import (
     auction_confirm_result_schema,
     auction_reject_result_schema,
 )
+from auctions.services.decline_result import decline_auction_result
 from auctions.services.result_decision import (
     confirm_auction_result,
     reject_auction_result,
@@ -77,6 +78,31 @@ class AuctionRejectResultView(APIView):
                 "auctionId": auction.id,
                 "status": auction.status,
                 "ownerDecision": auction.owner_decision,
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
+class AuctionDeclineResultView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, pk: int):
+        ser = _RejectResultSerializer(data=request.data)
+        ser.is_valid(raise_exception=True)
+        reason = ser.validated_data["reason"]
+
+        with transaction.atomic():
+            auction = _get_auction_for_owner_decision(pk, request.user)
+            result = decline_auction_result(auction=auction, reason=reason)
+
+        auction.refresh_from_db()
+        return Response(
+            {
+                "auctionId": auction.id,
+                "status": auction.status,
+                "ownerDecision": auction.owner_decision,
+                "auctionFailed": result["auction_failed"],
+                "newWinnerBidId": result["new_winner_bid_id"],
             },
             status=status.HTTP_200_OK,
         )

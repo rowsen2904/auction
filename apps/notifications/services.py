@@ -28,6 +28,8 @@ class NotificationEvent:
     AUCTION_FINISHED_CLOSED = "auction_finished_closed"
     AUCTION_RESULT_CONFIRMED = "auction_result_confirmed"
     AUCTION_RESULT_REJECTED = "auction_result_rejected"
+    AUCTION_WINNER_DECLINED = "auction_winner_declined"
+    AUCTION_WINNER_PROMOTED = "auction_winner_promoted"
     DOCUMENTS_REQUESTED = "documents_requested"
     DOCUMENTS_REQUEST_ANSWERED = "documents_request_answered"
 
@@ -652,6 +654,65 @@ def notify_auction_result_rejected(*, auction, winner_bid, reason: str) -> None:
                 "winner_bid_id": getattr(winner_bid, "id", None),
             },
             dedupe_key=f"notif:auction_result_rejected:admin:{auction.id}:admin:{admin.id}",
+        )
+
+
+def notify_auction_winner_declined(*, auction, declined_bid, reason: str) -> None:
+    create_notification(
+        user=declined_bid.broker,
+        category=Notification.Category.AUCTION,
+        event_type=NotificationEvent.AUCTION_WINNER_DECLINED,
+        message=(
+            f"Девелопер отказался от вашей ставки по аукциону #{auction.id}. "
+            f"Причина: {reason}"
+        ),
+        auction=auction,
+        data={
+            "auction_id": auction.id,
+            "declined_bid_id": declined_bid.id,
+            "reason": reason,
+        },
+        dedupe_key=f"notif:winner_declined:{auction.id}:bid:{declined_bid.id}",
+    )
+
+
+def notify_auction_winner_promoted(*, auction, new_winner_bid) -> None:
+    broker_name = _display_user(new_winner_bid.broker)
+
+    create_notification(
+        user=new_winner_bid.broker,
+        category=Notification.Category.AUCTION,
+        event_type=NotificationEvent.AUCTION_WINNER_PROMOTED,
+        message=(
+            f"Вы стали победителем аукциона #{auction.id} после отказа предыдущего "
+            f"кандидата. Дождитесь подтверждения от девелопера"
+        ),
+        auction=auction,
+        data={
+            "auction_id": auction.id,
+            "winner_bid_id": new_winner_bid.id,
+        },
+        dedupe_key=f"notif:winner_promoted:{auction.id}:bid:{new_winner_bid.id}",
+    )
+    for admin in _admins_queryset():
+        create_notification(
+            user=admin,
+            category=Notification.Category.AUCTION,
+            event_type=NotificationEvent.AUCTION_WINNER_PROMOTED,
+            message=(
+                f"В аукционе #{auction.id} новый победитель: {broker_name}. "
+                f"Ожидается решение девелопера"
+            ),
+            auction=auction,
+            data={
+                "auction_id": auction.id,
+                "winner_bid_id": new_winner_bid.id,
+                "broker_id": new_winner_bid.broker_id,
+            },
+            dedupe_key=(
+                f"notif:winner_promoted:admin:{auction.id}:"
+                f"bid:{new_winner_bid.id}:admin:{admin.id}"
+            ),
         )
 
 

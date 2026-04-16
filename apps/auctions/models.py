@@ -105,6 +105,14 @@ class Auction(models.Model):
         related_name="shortlisted_in_auctions",
     )
 
+    # Bids the owner rejected via decline-result (ТЗ 8.5) — excluded from the
+    # next-candidate search so the same winner isn't offered again.
+    declined_bids = models.ManyToManyField(
+        "auctions.Bid",
+        blank=True,
+        related_name="declined_in_auctions",
+    )
+
     min_bid_increment = models.DecimalField(
         max_digits=14,
         decimal_places=2,

@@ -20,6 +20,7 @@ from .views.document_requests import (
 from .views.participants import AuctionJoinView, AuctionParticipantsView
 from .views.result_decision import (
     AuctionConfirmResultView,
+    AuctionDeclineResultView,
     AuctionRejectResultView,
 )
 
@@ -62,6 +63,11 @@ urlpatterns = [
         "<int:pk>/reject-result/",
         AuctionRejectResultView.as_view(),
         name="auction-reject-result",
+    ),
+    path(
+        "<int:pk>/decline-result/",
+        AuctionDeclineResultView.as_view(),
+        name="auction-decline-result",
     ),
     path(
         "<int:pk>/request-documents/",
