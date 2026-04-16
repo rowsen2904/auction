@@ -36,6 +36,7 @@ from .serializers import (
     UserDocumentNameUpdateSerializer,
     UserDocumentSerializer,
     UserDocumentsUploadSerializer,
+    UserProfileUpdateSerializer,
     VerifyEmailSerializer,
 )
 from .utils import (
@@ -237,6 +238,43 @@ class MeView(APIView):
                 status=status.HTTP_403_FORBIDDEN,
             )
 
+        return Response(
+            MeSerializer(user, context={"request": request}).data,
+            status=status.HTTP_200_OK,
+        )
+
+    @extend_schema(
+        summary="Update current user's profile",
+        tags=["Auth"],
+        request=UserProfileUpdateSerializer,
+        responses={200: MeSerializer},
+    )
+    def patch(self, request, *args, **kwargs):
+        user = request.user
+
+        if not getattr(user, "is_active", True):
+            return Response(
+                {"detail": "Пользователь неактивен."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        serializer = UserProfileUpdateSerializer(
+            data=request.data,
+            context={"user_id": user.id, "request": request},
+        )
+        serializer.is_valid(raise_exception=True)
+
+        try:
+            with transaction.atomic():
+                user = User.objects.select_for_update().get(pk=user.pk)
+                serializer.apply(user)
+        except IntegrityError:
+            return Response(
+                {"error": _("Не удалось обновить профиль: конфликт значений.")},
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        user.refresh_from_db()
         return Response(
             MeSerializer(user, context={"request": request}).data,
             status=status.HTTP_200_OK,

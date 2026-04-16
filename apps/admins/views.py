@@ -3,6 +3,7 @@ from django.db import IntegrityError, transaction
 from django.db.models import Prefetch
 from django.shortcuts import get_object_or_404
 from django.utils.translation import gettext_lazy as _
+from drf_spectacular.utils import extend_schema
 from properties.filters import PendingPropertyFilter
 from properties.models import Property
 from rest_framework import generics, status
@@ -12,7 +13,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.users.models import Developer, UserDocument
-from apps.users.serializers import TokenUserSerializer
+from apps.users.serializers import TokenUserSerializer, UserProfileUpdateSerializer
 
 from .filters import UserFilter
 from .paginations import UserListPagination
@@ -294,6 +295,60 @@ class AdminDeveloperUpdateView(generics.GenericAPIView):
         return Response(
             {
                 "message": _("Девелопер успешно обновлён."),
+                "user": TokenUserSerializer(user, context={"request": request}).data,
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
+class AdminUserUpdateView(generics.GenericAPIView):
+    permission_classes = [IsAdminUser]
+    serializer_class = UserProfileUpdateSerializer
+
+    def _get_user_for_update(self, pk: int):
+        return get_object_or_404(
+            User.objects.select_for_update(of=("self",)).select_related(
+                "broker", "developer"
+            ),
+            pk=pk,
+        )
+
+    @extend_schema(
+        summary="Admin updates any user's profile",
+        tags=["Admins"],
+        request=UserProfileUpdateSerializer,
+        responses={200: TokenUserSerializer},
+    )
+    def patch(self, request, pk: int, *args, **kwargs):
+        serializer = UserProfileUpdateSerializer(
+            data=request.data,
+            context={"user_id": pk, "request": request},
+            is_admin_update=True,
+        )
+        serializer.is_valid(raise_exception=True)
+
+        if (
+            request.user.id == pk
+            and serializer.validated_data.get("is_active") is False
+        ):
+            raise ValidationError(
+                {"detail": _("Вы не можете деактивировать свой аккаунт.")}
+            )
+
+        try:
+            with transaction.atomic():
+                user = self._get_user_for_update(pk)
+                serializer.apply(user)
+        except IntegrityError:
+            return Response(
+                {"error": _("Не удалось обновить пользователя: конфликт значений.")},
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        user.refresh_from_db()
+        return Response(
+            {
+                "message": _("Пользователь успешно обновлён."),
                 "user": TokenUserSerializer(user, context={"request": request}).data,
             },
             status=status.HTTP_200_OK,

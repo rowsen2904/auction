@@ -432,6 +432,97 @@ class UserDocumentDeleteSerializer(UserDocumentAccessMixin, serializers.Serializ
         return document
 
 
+class UserProfileUpdateSerializer(serializers.Serializer):
+    """
+    Universal profile update payload used both by self-update
+    (PATCH /users/me/) and admin-update (PATCH /admin/users/{pk}/).
+
+    Role-specific fields are silently ignored if the target user doesn't have
+    the corresponding nested model (e.g. company_name for a broker).
+    """
+
+    first_name = serializers.CharField(required=False, allow_blank=True, max_length=150)
+    last_name = serializers.CharField(required=False, allow_blank=True, max_length=150)
+    email = serializers.EmailField(required=False)
+    inn_number = serializers.CharField(required=False, allow_blank=False, max_length=12)
+
+    phone_number = serializers.CharField(
+        required=False, allow_blank=True, max_length=20
+    )
+
+    company_name = serializers.CharField(
+        required=False, allow_blank=False, max_length=55
+    )
+
+    def __init__(self, *args, **kwargs):
+        self._is_admin_update = kwargs.pop("is_admin_update", False)
+        super().__init__(*args, **kwargs)
+        if self._is_admin_update:
+            self.fields["is_active"] = serializers.BooleanField(required=False)
+
+    def validate_email(self, value: str) -> str:
+        email = value.strip().lower()
+        user_id = self.context.get("user_id")
+        qs = User.objects.filter(email=email)
+        if user_id is not None:
+            qs = qs.exclude(id=user_id)
+        if qs.exists():
+            raise serializers.ValidationError(
+                _("Пользователь с таким email уже существует.")
+            )
+        return email
+
+    def validate_inn_number(self, value: str) -> str:
+        value = str(value).strip()
+        validate_inn(value)
+        user_id = self.context.get("user_id")
+        qs = User.objects.filter(inn_number=value)
+        if user_id is not None:
+            qs = qs.exclude(id=user_id)
+        if qs.exists():
+            raise serializers.ValidationError(
+                _("Пользователь с таким ИНН уже существует.")
+            )
+        return value
+
+    def validate(self, attrs):
+        if not attrs:
+            raise serializers.ValidationError(
+                {"detail": _("Передайте хотя бы одно поле для обновления.")}
+            )
+        return attrs
+
+    def apply(self, user):
+        validated = self.validated_data
+        user_fields = []
+        for field in ("email", "first_name", "last_name", "inn_number"):
+            if field in validated and getattr(user, field) != validated[field]:
+                setattr(user, field, validated[field])
+                user_fields.append(field)
+
+        if self._is_admin_update and "is_active" in validated:
+            if user.is_active != validated["is_active"]:
+                user.is_active = validated["is_active"]
+                user_fields.append("is_active")
+
+        if user_fields:
+            user.save(update_fields=user_fields)
+
+        broker = getattr(user, "broker", None)
+        if broker is not None and "phone_number" in validated:
+            if broker.phone_number != validated["phone_number"]:
+                broker.phone_number = validated["phone_number"]
+                broker.save(update_fields=["phone_number"])
+
+        developer = getattr(user, "developer", None)
+        if developer is not None and "company_name" in validated:
+            if developer.company_name != validated["company_name"]:
+                developer.company_name = validated["company_name"]
+                developer.save(update_fields=["company_name"])
+
+        return user
+
+
 class ChangePasswordSerializer(serializers.Serializer):
     old_password = serializers.CharField(
         write_only=True,
