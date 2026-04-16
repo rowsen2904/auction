@@ -20,6 +20,12 @@ class Auction(models.Model):
         ACTIVE = "active", "Active"
         FINISHED = "finished", "Finished"
         CANCELLED = "cancelled", "Cancelled"
+        FAILED = "failed", "Failed"
+
+    class OwnerDecision(models.TextChoices):
+        PENDING = "pending", "Pending"
+        CONFIRMED = "confirmed", "Confirmed"
+        REJECTED = "rejected", "Rejected"
 
     # OPEN auction only. For CLOSED lot this stays null.
     real_property = models.ForeignKey(
@@ -105,6 +111,15 @@ class Auction(models.Model):
         validators=[MinValueValidator(Decimal("1.00"))],
         help_text="Минимальный шаг повышения ставки для open-аукциона.",
     )
+
+    owner_decision = models.CharField(
+        max_length=10,
+        choices=OwnerDecision.choices,
+        default=OwnerDecision.PENDING,
+        db_index=True,
+    )
+    owner_rejection_reason = models.TextField(blank=True, default="")
+    owner_decided_at = models.DateTimeField(null=True, blank=True)
 
     created_at = models.DateTimeField(default=timezone.now, db_index=True)
     updated_at = models.DateTimeField(auto_now=True)

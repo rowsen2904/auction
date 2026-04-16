@@ -7,6 +7,7 @@ from .closed_bids import (
 )
 from .closed_flow import ClosedSelectWinnerView, ClosedShortlistView
 from .participants import AuctionJoinView, AuctionParticipantsView
+from .result_decision import AuctionConfirmResultView, AuctionRejectResultView
 
 __all__ = [
     "AuctionListCreateView",
@@ -20,4 +21,6 @@ __all__ = [
     "ClosedBidsListForOwnerAdminView",
     "ClosedShortlistView",
     "ClosedSelectWinnerView",
+    "AuctionConfirmResultView",
+    "AuctionRejectResultView",
 ]

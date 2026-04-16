@@ -114,7 +114,7 @@ class TestAuctionTasks(TestCase, AuctionTestMixin):
         self.assertEqual(auc.winner_bid_id, b2.id)
 
     @patch("auctions.tasks.broadcast_auction_status")
-    def test_finish_closed_creates_deal(self, broadcast_mock):
+    def test_finish_closed_does_not_create_deal_until_confirm(self, broadcast_mock):
         now = timezone.now()
         auc = self.create_auction(
             owner=self.dev1,
@@ -135,12 +135,10 @@ class TestAuctionTasks(TestCase, AuctionTestMixin):
 
         finish_auction.run(auc.id)
 
-        deal = Deal.objects.get(auction_id=auc.id)
-        self.assertEqual(deal.broker_id, self.broker1.id)
-        self.assertEqual(deal.bid_id, bid.id)
-        self.assertEqual(deal.real_property_id, self.prop1.id)
-        self.assertEqual(deal.amount, self.prop1.price)
-        self.assertEqual(deal.lot_bid_amount, Decimal("1500.00"))
+        auc.refresh_from_db()
+        self.assertEqual(auc.winner_bid_id, bid.id)
+        self.assertEqual(auc.owner_decision, Auction.OwnerDecision.PENDING)
+        self.assertFalse(Deal.objects.filter(auction_id=auc.id).exists())
 
     @patch("auctions.tasks.broadcast_auction_status")
     def test_finish_closed_tie_earliest_bid_wins(self, broadcast_mock):
@@ -199,9 +197,11 @@ class TestAuctionTasks(TestCase, AuctionTestMixin):
         shortlisted = list(auc.shortlisted_bids.values_list("id", flat=True))
         self.assertEqual(shortlisted, [bid.id])
 
-    @patch("auctions.services.assignments.notify_closed_not_selected")
+    @patch("auctions.tasks.notify_auction_result_awaiting_owner")
     @patch("auctions.tasks.broadcast_auction_status")
-    def test_finish_closed_notifies_non_selected(self, broadcast_mock, notify_mock):
+    def test_finish_closed_notifies_owner_awaiting_decision(
+        self, broadcast_mock, awaiting_mock
+    ):
         now = timezone.now()
         auc = self.create_auction(
             owner=self.dev1,
@@ -219,7 +219,7 @@ class TestAuctionTasks(TestCase, AuctionTestMixin):
             amount=Decimal("1500.00"),
             is_sealed=True,
         )
-        self.create_bid(
+        b2 = self.create_bid(
             auction=auc,
             broker=self.broker2,
             amount=Decimal("2000.00"),
@@ -228,6 +228,6 @@ class TestAuctionTasks(TestCase, AuctionTestMixin):
 
         finish_auction.run(auc.id)
 
-        notify_mock.assert_called_once()
-        _, kwargs = notify_mock.call_args
-        self.assertEqual(kwargs["selected_broker_ids"], [self.broker2.id])
+        awaiting_mock.assert_called_once()
+        _, kwargs = awaiting_mock.call_args
+        self.assertEqual(kwargs["winner_bid"].id, b2.id)

@@ -26,6 +26,8 @@ class NotificationEvent:
     AUCTION_NOT_SELECTED = "auction_not_selected"
     AUCTION_FINISHED_OPEN = "auction_finished_open"
     AUCTION_FINISHED_CLOSED = "auction_finished_closed"
+    AUCTION_RESULT_CONFIRMED = "auction_result_confirmed"
+    AUCTION_RESULT_REJECTED = "auction_result_rejected"
 
     DOCUMENTS_DEADLINE_3D = "documents_deadline_3d"
     DOCUMENTS_DEADLINE_1D = "documents_deadline_1d"
@@ -554,6 +556,100 @@ def notify_overdue_deal(*, deal) -> None:
                 "broker_id": deal.broker_id,
             },
             dedupe_key=f"notif:deal_overdue:admin:{deal.id}:admin:{admin.id}",
+        )
+
+
+def notify_auction_result_awaiting_owner(*, auction, winner_bid=None) -> None:
+    if winner_bid is None:
+        winner_bid = getattr(auction, "winner_bid", None)
+    if winner_bid is None:
+        return
+
+    broker_name = _display_user(winner_bid.broker)
+    message = (
+        f"Аукцион #{auction.id} завершён. Победитель: {broker_name}, "
+        f"ставка {winner_bid.amount}. Подтвердите или отклоните результат"
+    )
+    create_notification(
+        user=auction.owner,
+        category=Notification.Category.AUCTION,
+        event_type=NotificationEvent.AUCTION_FINISHED_OPEN,
+        message=message,
+        auction=auction,
+        data={
+            "auction_id": auction.id,
+            "winner_bid_id": winner_bid.id,
+            "awaiting_owner_decision": True,
+        },
+        dedupe_key=f"notif:auction_awaiting_owner:{auction.id}",
+    )
+
+
+def notify_auction_result_confirmed(*, auction, winner_bid) -> None:
+    address_source = getattr(auction, "real_property", None)
+    address = (
+        getattr(address_source, "address", None)
+        if address_source is not None
+        else f"#{auction.id}"
+    )
+    broker_name = _display_user(winner_bid.broker)
+
+    for admin in _admins_queryset():
+        create_notification(
+            user=admin,
+            category=Notification.Category.AUCTION,
+            event_type=NotificationEvent.AUCTION_RESULT_CONFIRMED,
+            message=(
+                f"Девелопер подтвердил результат аукциона #{auction.id} "
+                f"({address}). Победитель: {broker_name}"
+            ),
+            auction=auction,
+            data={
+                "auction_id": auction.id,
+                "winner_bid_id": winner_bid.id,
+                "broker_id": winner_bid.broker_id,
+            },
+            dedupe_key=f"notif:auction_result_confirmed:admin:{auction.id}:admin:{admin.id}",
+        )
+
+
+def notify_auction_result_rejected(*, auction, winner_bid, reason: str) -> None:
+    owner_name = _display_developer(auction.owner)
+
+    if winner_bid is not None:
+        create_notification(
+            user=winner_bid.broker,
+            category=Notification.Category.AUCTION,
+            event_type=NotificationEvent.AUCTION_RESULT_REJECTED,
+            message=(
+                f"Девелопер отклонил результат аукциона #{auction.id}. "
+                f"Сделка по вашей ставке не будет создана. Причина: {reason}"
+            ),
+            auction=auction,
+            data={
+                "auction_id": auction.id,
+                "winner_bid_id": winner_bid.id,
+                "reason": reason,
+            },
+            dedupe_key=f"notif:auction_result_rejected:broker:{auction.id}",
+        )
+
+    for admin in _admins_queryset():
+        create_notification(
+            user=admin,
+            category=Notification.Category.AUCTION,
+            event_type=NotificationEvent.AUCTION_RESULT_REJECTED,
+            message=(
+                f"Девелопер {owner_name} отклонил результат аукциона #{auction.id}. "
+                f"Аукцион помечен как несостоявшийся. Причина: {reason}"
+            ),
+            auction=auction,
+            data={
+                "auction_id": auction.id,
+                "reason": reason,
+                "winner_bid_id": getattr(winner_bid, "id", None),
+            },
+            dedupe_key=f"notif:auction_result_rejected:admin:{auction.id}:admin:{admin.id}",
         )
 
 

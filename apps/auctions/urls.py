@@ -13,6 +13,10 @@ from .views.closed_bids import (
 )
 from .views.closed_flow import ClosedSelectWinnerView, ClosedShortlistView
 from .views.participants import AuctionJoinView, AuctionParticipantsView
+from .views.result_decision import (
+    AuctionConfirmResultView,
+    AuctionRejectResultView,
+)
 
 app_name = "auctions"
 
@@ -43,5 +47,15 @@ urlpatterns = [
         "<int:pk>/select-winner/",
         ClosedSelectWinnerView.as_view(),
         name="closed-select-winner",
+    ),
+    path(
+        "<int:pk>/confirm-result/",
+        AuctionConfirmResultView.as_view(),
+        name="auction-confirm-result",
+    ),
+    path(
+        "<int:pk>/reject-result/",
+        AuctionRejectResultView.as_view(),
+        name="auction-reject-result",
     ),
 ]

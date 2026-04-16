@@ -519,3 +519,92 @@ closed_select_winner_schema = extend_schema(
     },
     tags=["Closed Flow"],
 )
+
+
+AUCTION_CONFIRM_RESULT_DOC = """
+Owner (developer) confirms the auction result.
+
+Available only when:
+- auction.status == FINISHED
+- auction.owner_decision == PENDING
+- winner_bid is set (automatic for OPEN, either auto-picked or manually
+  selected via shortlist/select-winner for CLOSED)
+
+Effect:
+- creates Deal(s) for the winner
+- owner_decision -> CONFIRMED
+- sends notifications to broker and admins
+"""
+
+AUCTION_REJECT_RESULT_DOC = """
+Owner (developer) rejects the auction result.
+
+Available only when:
+- auction.status == FINISHED
+- auction.owner_decision == PENDING
+
+Effect:
+- auction.status -> FAILED (Несостоявшийся)
+- owner_decision -> REJECTED
+- no Deal is created
+- winner broker (if any) and admins receive a notification with the reason
+
+Rejection is terminal — the auction cannot be reopened.
+"""
+
+
+auction_confirm_result_schema = extend_schema(
+    summary="Developer confirms auction result",
+    description=AUCTION_CONFIRM_RESULT_DOC,
+    request=None,
+    responses={
+        200: OpenApiResponse(
+            response=inline_serializer(
+                name="AuctionConfirmResultResponse",
+                fields={
+                    "auctionId": serializers.IntegerField(),
+                    "ownerDecision": serializers.CharField(),
+                    "createdDealIds": serializers.ListField(
+                        child=serializers.IntegerField()
+                    ),
+                },
+            ),
+            description="Result confirmed. Deals created.",
+        ),
+        400: OpenApiResponse(response=DRFDetailErrorSerializer),
+        401: OpenApiResponse(response=DRFDetailErrorSerializer),
+        403: OpenApiResponse(response=DRFDetailErrorSerializer),
+        404: OpenApiResponse(description="Auction not found."),
+    },
+    tags=["Auctions"],
+)
+
+
+auction_reject_result_schema = extend_schema(
+    summary="Developer rejects auction result",
+    description=AUCTION_REJECT_RESULT_DOC,
+    request=inline_serializer(
+        name="AuctionRejectResultRequest",
+        fields={
+            "reason": serializers.CharField(max_length=2000),
+        },
+    ),
+    responses={
+        200: OpenApiResponse(
+            response=inline_serializer(
+                name="AuctionRejectResultResponse",
+                fields={
+                    "auctionId": serializers.IntegerField(),
+                    "status": serializers.CharField(),
+                    "ownerDecision": serializers.CharField(),
+                },
+            ),
+            description="Result rejected. Auction marked as FAILED.",
+        ),
+        400: OpenApiResponse(response=DRFDetailErrorSerializer),
+        401: OpenApiResponse(response=DRFDetailErrorSerializer),
+        403: OpenApiResponse(response=DRFDetailErrorSerializer),
+        404: OpenApiResponse(description="Auction not found."),
+    },
+    tags=["Auctions"],
+)

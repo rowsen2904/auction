@@ -7,6 +7,7 @@ from django.db import transaction
 from django.utils import timezone
 from django_celery_beat.models import ClockedSchedule, PeriodicTask
 from notifications.services import (
+    notify_auction_result_awaiting_owner,
     notify_closed_auction_finished_for_owner,
     notify_open_auction_finished_for_owner,
 )
@@ -130,6 +131,10 @@ def finish_auction(self, auction_id: int) -> None:
             notify_open_auction_finished_for_owner(
                 auction=auction, winner_bid=winner_bid
             )
+            if winner_bid is not None:
+                notify_auction_result_awaiting_owner(
+                    auction=auction, winner_bid=winner_bid
+                )
         else:
             sealed_bids_count = Bid.objects.filter(
                 auction_id=auction.id, is_sealed=True
@@ -138,32 +143,14 @@ def finish_auction(self, auction_id: int) -> None:
                 auction=auction, bids_count=sealed_bids_count
             )
 
-        # OPEN: auto-create deal if winner exists
-        if auction.mode == Auction.Mode.OPEN and auction.winner_bid_id:
-            from deals.services import create_deal_from_bid
-
-            # Fetch full property (select_related+only may not load all fields)
-            from properties.models import Property
-
-            prop = None
-            if auction.real_property_id:
-                prop = Property.objects.filter(id=auction.real_property_id).first()
-            if prop is None:
-                prop = auction.properties.order_by("id").first()
-
-            if prop is not None:
-                bid = Bid.objects.get(id=auction.winner_bid_id)
-                create_deal_from_bid(
-                    auction=auction,
-                    bid=bid,
-                    real_property=prop,
-                )
-
-        # CLOSED: auto-select winner (highest amount, earliest on tie)
-        if auction.mode == Auction.Mode.CLOSED:
+            # CLOSED: auto-select winner bid (deal is NOT created yet — owner must confirm)
             from .services.assignments import auto_select_closed_winner
 
-            auto_select_closed_winner(auction=auction)
+            auto_winner = auto_select_closed_winner(auction=auction)
+            if auto_winner is not None:
+                notify_auction_result_awaiting_owner(
+                    auction=auction, winner_bid=auto_winner
+                )
 
         broadcast_auction_status(
             auction_id=auction.id,
