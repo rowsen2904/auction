@@ -8,6 +8,8 @@ dump.rdb
 logs/
 
 staticfiles/
+test_media/
+test_staticfiles/
 
 github_actions_deploy.pub
 github_actions_deploy
