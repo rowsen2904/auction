@@ -12,6 +12,11 @@ from .views.closed_bids import (
     MyClosedBidUpdateView,
 )
 from .views.closed_flow import ClosedSelectWinnerView, ClosedShortlistView
+from .views.document_requests import (
+    DocumentRequestListView,
+    RequestDocumentsView,
+    UploadDocumentRequestResponseView,
+)
 from .views.participants import AuctionJoinView, AuctionParticipantsView
 from .views.result_decision import (
     AuctionConfirmResultView,
@@ -57,5 +62,20 @@ urlpatterns = [
         "<int:pk>/reject-result/",
         AuctionRejectResultView.as_view(),
         name="auction-reject-result",
+    ),
+    path(
+        "<int:pk>/request-documents/",
+        RequestDocumentsView.as_view(),
+        name="auction-request-documents",
+    ),
+    path(
+        "<int:pk>/document-requests/",
+        DocumentRequestListView.as_view(),
+        name="auction-document-requests-list",
+    ),
+    path(
+        "document-requests/<int:pk>/upload/",
+        UploadDocumentRequestResponseView.as_view(),
+        name="document-request-upload",
     ),
 ]

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from decimal import Decimal
+from uuid import uuid4
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
@@ -8,6 +9,7 @@ from django.core.validators import MinValueValidator
 from django.db import models
 from django.db.models import Q, Sum
 from django.utils import timezone
+from django.utils.translation import gettext_lazy as _
 
 
 class Auction(models.Model):
@@ -296,3 +298,78 @@ class Bid(models.Model):
 
     def __str__(self) -> str:
         return f"Bid #{self.id} auction={self.auction_id} amount={self.amount}"
+
+
+def document_request_upload_to(instance: "DocumentRequestFile", filename: str) -> str:
+    ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else "bin"
+    req_id = instance.request_id or "tmp"
+    return f"document_requests/{req_id}/{uuid4().hex}.{ext}"
+
+
+class DocumentRequest(models.Model):
+    class Status(models.TextChoices):
+        PENDING = "pending", _("Pending")
+        ANSWERED = "answered", _("Answered")
+        CANCELLED = "cancelled", _("Cancelled")
+
+    auction = models.ForeignKey(
+        Auction,
+        on_delete=models.CASCADE,
+        related_name="document_requests",
+    )
+    broker = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="received_document_requests",
+    )
+    requested_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="sent_document_requests",
+    )
+    description = models.TextField(_("Описание запроса"))
+    broker_comment = models.TextField(_("Комментарий брокера"), blank=True, default="")
+    status = models.CharField(
+        max_length=10,
+        choices=Status.choices,
+        default=Status.PENDING,
+        db_index=True,
+    )
+    created_at = models.DateTimeField(default=timezone.now, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    answered_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        verbose_name = _("Запрос документов")
+        verbose_name_plural = _("Запросы документов")
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(
+                fields=["auction", "-created_at"], name="docreq_auc_created_idx"
+            ),
+            models.Index(fields=["broker", "status"], name="docreq_broker_status_idx"),
+        ]
+
+    def __str__(self) -> str:
+        return f"DocumentRequest #{self.id} auction={self.auction_id} broker={self.broker_id}"
+
+
+class DocumentRequestFile(models.Model):
+    request = models.ForeignKey(
+        DocumentRequest,
+        on_delete=models.CASCADE,
+        related_name="response_documents",
+    )
+    file = models.FileField(upload_to=document_request_upload_to)
+    uploaded_at = models.DateTimeField(default=timezone.now, db_index=True)
+
+    class Meta:
+        ordering = ["uploaded_at"]
+        indexes = [
+            models.Index(
+                fields=["request", "uploaded_at"], name="docreqfile_req_up_idx"
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"DocumentRequestFile #{self.id} request={self.request_id}"

@@ -4,7 +4,7 @@ from django.contrib import admin
 from django.db import transaction
 from django.utils.html import format_html
 
-from .models import Auction, Bid
+from .models import Auction, Bid, DocumentRequest, DocumentRequestFile
 
 
 class BidInline(admin.TabularInline):
@@ -182,3 +182,19 @@ class BidAdmin(admin.ModelAdmin):
                         "updated_at",
                     ]
                 )
+
+
+class DocumentRequestFileInline(admin.TabularInline):
+    model = DocumentRequestFile
+    extra = 0
+    readonly_fields = ("uploaded_at",)
+
+
+@admin.register(DocumentRequest)
+class DocumentRequestAdmin(admin.ModelAdmin):
+    list_display = ("id", "auction", "broker", "requested_by", "status", "created_at")
+    list_filter = ("status",)
+    search_fields = ("auction__id", "broker__email", "requested_by__email")
+    raw_id_fields = ("auction", "broker", "requested_by")
+    readonly_fields = ("created_at", "updated_at", "answered_at")
+    inlines = [DocumentRequestFileInline]

@@ -28,6 +28,8 @@ class NotificationEvent:
     AUCTION_FINISHED_CLOSED = "auction_finished_closed"
     AUCTION_RESULT_CONFIRMED = "auction_result_confirmed"
     AUCTION_RESULT_REJECTED = "auction_result_rejected"
+    DOCUMENTS_REQUESTED = "documents_requested"
+    DOCUMENTS_REQUEST_ANSWERED = "documents_request_answered"
 
     DOCUMENTS_DEADLINE_3D = "documents_deadline_3d"
     DOCUMENTS_DEADLINE_1D = "documents_deadline_1d"
@@ -651,6 +653,53 @@ def notify_auction_result_rejected(*, auction, winner_bid, reason: str) -> None:
             },
             dedupe_key=f"notif:auction_result_rejected:admin:{auction.id}:admin:{admin.id}",
         )
+
+
+def notify_broker_documents_requested(*, document_request) -> None:
+    auction = document_request.auction
+    description = document_request.description
+    requester_name = _display_user(document_request.requested_by)
+
+    create_notification(
+        user=document_request.broker,
+        category=Notification.Category.AUCTION,
+        event_type=NotificationEvent.DOCUMENTS_REQUESTED,
+        message=(
+            f"По аукциону #{auction.id} запрошены документы от {requester_name}. "
+            f"{description[:120]}"
+        ),
+        auction=auction,
+        data={
+            "auction_id": auction.id,
+            "document_request_id": document_request.id,
+            "requested_by_id": document_request.requested_by_id,
+        },
+        dedupe_key=f"notif:documents_requested:{document_request.id}",
+    )
+
+
+def notify_documents_request_answered(*, document_request) -> None:
+    auction = document_request.auction
+    broker_name = _display_user(document_request.broker)
+    file_count = document_request.response_documents.count()
+
+    create_notification(
+        user=document_request.requested_by,
+        category=Notification.Category.AUCTION,
+        event_type=NotificationEvent.DOCUMENTS_REQUEST_ANSWERED,
+        message=(
+            f"Брокер {broker_name} ответил на запрос по аукциону #{auction.id}: "
+            f"загружено {file_count} файл(ов)"
+        ),
+        auction=auction,
+        data={
+            "auction_id": auction.id,
+            "document_request_id": document_request.id,
+            "broker_id": document_request.broker_id,
+            "file_count": file_count,
+        },
+        dedupe_key=f"notif:documents_request_answered:{document_request.id}",
+    )
 
 
 def notify_deal_failed(*, deal, days_in_pending: int) -> None:
