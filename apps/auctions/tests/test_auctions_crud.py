@@ -93,6 +93,26 @@ class TestAuctionsCRUD(APITestCase, AuctionTestMixin):
         self.assertEqual(resp.status_code, status.HTTP_200_OK)
         self.assertEqual(len(resp.data["bids"]), 1)
 
+    def test_detail_exposes_owner_decision_fields(self):
+        now = timezone.now()
+        auc = self.create_auction(
+            owner=self.dev1,
+            prop=self.prop1,
+            mode=Auction.Mode.OPEN,
+            status_val=Auction.Status.FINISHED,
+            start=now - timedelta(hours=2),
+            end=now - timedelta(minutes=1),
+        )
+
+        resp = self.client.get(f"{self.BASE}{auc.id}/", format="json")
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.assertIn("owner_decision", resp.data)
+        self.assertIn("owner_rejection_reason", resp.data)
+        self.assertIn("owner_decided_at", resp.data)
+        self.assertEqual(resp.data["owner_decision"], Auction.OwnerDecision.PENDING)
+        self.assertEqual(resp.data["owner_rejection_reason"], "")
+        self.assertIsNone(resp.data["owner_decided_at"])
+
     def test_detail_closed_bids_hidden_for_non_owner(self):
         now = timezone.now()
         auc = self.create_auction(

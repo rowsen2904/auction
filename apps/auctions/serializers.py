@@ -108,6 +108,9 @@ class AuctionListSerializer(serializers.ModelSerializer):
             "winner_bid",
             "lot_total_price",
             "deals_created",
+            "owner_decision",
+            "owner_rejection_reason",
+            "owner_decided_at",
             "created_at",
             "updated_at",
         ]
