@@ -22,6 +22,11 @@ app.conf.beat_schedule = {
         "task": "deals.tasks.check_overdue_deals",
         "schedule": crontab(hour=4, minute=0),  # every day at 04:00
     },
+    # Daily check for deals stuck in PENDING_DOCUMENTS > N days -> FAILED
+    "mark_failed_pending_deals_daily": {
+        "task": "deals.tasks.mark_failed_pending_deals",
+        "schedule": crontab(hour=4, minute=15),  # every day at 04:15
+    },
     "notifications-document-deadline-reminders": {
         "task": "notifications.tasks.send_document_deadline_reminders",
         "schedule": crontab(hour=9, minute=0),

@@ -30,6 +30,7 @@ class NotificationEvent:
     DOCUMENTS_DEADLINE_3D = "documents_deadline_3d"
     DOCUMENTS_DEADLINE_1D = "documents_deadline_1d"
     OBLIGATION_OVERDUE = "obligation_overdue"
+    DEAL_FAILED = "deal_failed"
 
     DEAL_SUBMITTED_FOR_REVIEW = "deal_submitted_for_review"
     ADMIN_APPROVED = "admin_approved"
@@ -553,6 +554,67 @@ def notify_overdue_deal(*, deal) -> None:
                 "broker_id": deal.broker_id,
             },
             dedupe_key=f"notif:deal_overdue:admin:{deal.id}:admin:{admin.id}",
+        )
+
+
+def notify_deal_failed(*, deal, days_in_pending: int) -> None:
+    address = getattr(deal.real_property, "address", f"#{deal.real_property_id}")
+    broker_name = _display_user(deal.broker)
+
+    create_notification(
+        user=deal.broker,
+        category=Notification.Category.DEAL,
+        event_type=NotificationEvent.DEAL_FAILED,
+        message=(
+            f"Сделка по {address} признана несостоявшейся: документы не были "
+            f"загружены в течение {days_in_pending} дней"
+        ),
+        deal=deal,
+        real_property=deal.real_property,
+        data={
+            "deal_id": deal.id,
+            "property_id": deal.real_property_id,
+            "days_in_pending": days_in_pending,
+        },
+        dedupe_key=f"notif:deal_failed:broker:{deal.id}",
+    )
+    create_notification(
+        user=deal.developer,
+        category=Notification.Category.DEAL,
+        event_type=NotificationEvent.DEAL_FAILED,
+        message=(
+            f"Сделка по {address} признана несостоявшейся: брокер {broker_name} "
+            f"не загрузил документы в течение {days_in_pending} дней. "
+            f"Объект снова доступен для размещения"
+        ),
+        deal=deal,
+        real_property=deal.real_property,
+        data={
+            "deal_id": deal.id,
+            "property_id": deal.real_property_id,
+            "broker_id": deal.broker_id,
+            "days_in_pending": days_in_pending,
+        },
+        dedupe_key=f"notif:deal_failed:developer:{deal.id}",
+    )
+    for admin in _admins_queryset():
+        create_notification(
+            user=admin,
+            category=Notification.Category.DEAL,
+            event_type=NotificationEvent.DEAL_FAILED,
+            message=(
+                f"Сделка #{deal.id} по {address} автоматически помечена как "
+                f"несостоявшаяся. Брокер {broker_name} не загрузил документы"
+            ),
+            deal=deal,
+            real_property=deal.real_property,
+            data={
+                "deal_id": deal.id,
+                "property_id": deal.real_property_id,
+                "broker_id": deal.broker_id,
+                "days_in_pending": days_in_pending,
+            },
+            dedupe_key=f"notif:deal_failed:admin:{deal.id}:admin:{admin.id}",
         )
 
 

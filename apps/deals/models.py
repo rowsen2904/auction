@@ -22,6 +22,7 @@ class Deal(models.Model):
         ADMIN_REVIEW = "admin_review", _("Admin Review")
         DEVELOPER_CONFIRM = "developer_confirm", _("Developer Confirm")
         CONFIRMED = "confirmed", _("Confirmed")
+        FAILED = "failed", _("Failed")
 
     class ObligationStatus(models.TextChoices):
         ACTIVE = "active", _("Active")
@@ -178,6 +179,7 @@ class DealLog(models.Model):
         DEVELOPER_CONFIRMED = "developer_confirmed", _("Developer Confirmed")
         DEVELOPER_REJECTED = "developer_rejected", _("Developer Rejected")
         MARKED_OVERDUE = "marked_overdue", _("Marked Overdue")
+        MARKED_FAILED = "marked_failed", _("Marked Failed")
 
     deal = models.ForeignKey(
         Deal,
