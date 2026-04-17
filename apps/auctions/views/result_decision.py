@@ -28,7 +28,10 @@ class _RejectResultSerializer(serializers.Serializer):
 def _get_auction_for_owner_decision(pk: int, user) -> Auction:
     auction = get_object_or_404(
         Auction.objects.select_for_update()
-        .select_related("owner", "real_property")
+        # NOTE:
+        # Avoid joins inside SELECT ... FOR UPDATE.
+        # PostgreSQL rejects FOR UPDATE on nullable outer joins
+        # (e.g., Auction.real_property for CLOSED flow).
         .prefetch_related("properties"),
         pk=pk,
     )
