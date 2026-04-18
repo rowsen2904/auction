@@ -54,6 +54,8 @@ class Auction(models.Model):
 
     mode = models.CharField(max_length=10, choices=Mode.choices, db_index=True)
 
+    show_price_to_brokers = models.BooleanField(default=True)
+
     # Minimum acceptable bid amount FOR WHOLE LOT
     min_price = models.DecimalField(
         max_digits=14,

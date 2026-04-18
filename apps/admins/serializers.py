@@ -2,6 +2,7 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.utils.translation import gettext_lazy as _
+from helpers.validators import FileSizeValidationMixin
 from properties.models import Property
 from rest_framework import serializers
 
@@ -10,6 +11,7 @@ from apps.users.serializers import (
     DeveloperInfoSerializer,
     UserDocumentSerializer,
 )
+from apps.users.validators import validate_inn
 
 User = get_user_model()
 
@@ -85,7 +87,7 @@ class UserActiveUpdateSerializer(serializers.Serializer):
     is_active = serializers.BooleanField()
 
 
-class AdminDeveloperCreateSerializer(serializers.Serializer):
+class AdminDeveloperCreateSerializer(FileSizeValidationMixin, serializers.Serializer):
     email = serializers.EmailField()
     password = serializers.CharField(
         write_only=True,
@@ -114,12 +116,35 @@ class AdminDeveloperCreateSerializer(serializers.Serializer):
         allow_blank=False,
         max_length=55,
     )
+    inn_number = serializers.CharField(required=False, allow_blank=True, max_length=12)
+    phone_number = serializers.CharField(
+        required=False, allow_blank=True, max_length=20, default=""
+    )
+    inn = serializers.FileField(required=False)
+    passport = serializers.FileField(required=False)
 
     def validate_email(self, value: str) -> str:
         email = value.strip().lower()
         if User.objects.filter(email=email).exists():
             raise serializers.ValidationError(_("Пользователь уже существует."))
         return email
+
+    def validate_inn_number(self, value: str) -> str:
+        value = (value or "").strip()
+        if not value:
+            return ""
+        validate_inn(value)
+        if User.objects.filter(inn_number=value).exists():
+            raise serializers.ValidationError(
+                _("Пользователь с таким ИНН уже существует.")
+            )
+        return value
+
+    def validate_inn(self, file):
+        return self._validate_file_size(file, "inn")
+
+    def validate_passport(self, file):
+        return self._validate_file_size(file, "passport")
 
     def validate(self, attrs):
         password = attrs.get("password")
@@ -155,6 +180,12 @@ class AdminDeveloperUpdateSerializer(serializers.Serializer):
         allow_blank=False,
         max_length=55,
     )
+    inn_number = serializers.CharField(
+        required=False, allow_blank=True, max_length=12
+    )
+    phone_number = serializers.CharField(
+        required=False, allow_blank=True, max_length=20
+    )
 
     def validate_email(self, value: str) -> str:
         email = value.strip().lower()
@@ -168,6 +199,21 @@ class AdminDeveloperUpdateSerializer(serializers.Serializer):
             raise serializers.ValidationError(_("Пользователь уже существует."))
 
         return email
+
+    def validate_inn_number(self, value: str) -> str:
+        value = (value or "").strip()
+        if not value:
+            return ""
+        validate_inn(value)
+        user_id = self.context.get("user_id")
+        qs = User.objects.filter(inn_number=value)
+        if user_id is not None:
+            qs = qs.exclude(id=user_id)
+        if qs.exists():
+            raise serializers.ValidationError(
+                _("Пользователь с таким ИНН уже существует.")
+            )
+        return value
 
     def validate(self, attrs):
         if not attrs:

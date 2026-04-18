@@ -241,6 +241,13 @@ class Developer(models.Model):
         max_length=55,
     )
 
+    phone_number = models.CharField(
+        _("phone number"),
+        max_length=20,
+        blank=True,
+        default="",
+    )
+
     class Meta:
         verbose_name = _("developer")
         verbose_name_plural = _("developers")

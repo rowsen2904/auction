@@ -88,6 +88,7 @@ class AuctionListSerializer(serializers.ModelSerializer):
         read_only=True,
     )
     deals_created = serializers.SerializerMethodField()
+    has_failed_deal = serializers.SerializerMethodField()
 
     class Meta:
         model = Auction
@@ -97,6 +98,7 @@ class AuctionListSerializer(serializers.ModelSerializer):
             "properties",
             "owner_id",
             "mode",
+            "show_price_to_brokers",
             "min_price",
             "min_bid_increment",
             "start_date",
@@ -108,6 +110,7 @@ class AuctionListSerializer(serializers.ModelSerializer):
             "winner_bid",
             "lot_total_price",
             "deals_created",
+            "has_failed_deal",
             "owner_decision",
             "owner_rejection_reason",
             "owner_decided_at",
@@ -119,6 +122,13 @@ class AuctionListSerializer(serializers.ModelSerializer):
         from deals.models import Deal
 
         return Deal.objects.filter(auction_id=obj.id).exists()
+
+    def get_has_failed_deal(self, obj):
+        from deals.models import Deal
+
+        return Deal.objects.filter(
+            auction_id=obj.id, status=Deal.Status.FAILED
+        ).exists()
 
     def _is_broker_request(self) -> bool:
         request = self.context.get("request")
@@ -137,9 +147,26 @@ class AuctionListSerializer(serializers.ModelSerializer):
         data["current_price"] = None
         data["bids_count"] = None
 
+    def _hide_prices_for_broker(self, obj: Auction, data: dict) -> None:
+        if obj.show_price_to_brokers:
+            return
+        if not self._is_broker_request():
+            return
+
+        data["min_price"] = None
+        data["current_price"] = None
+        data["lot_total_price"] = None
+        properties = data.get("properties") or []
+        for prop in properties:
+            if isinstance(prop, dict):
+                prop["price"] = None
+        if isinstance(data.get("real_property"), dict):
+            data["real_property"]["price"] = None
+
     def to_representation(self, instance):
         data = super().to_representation(instance)
         self._hide_closed_summary_for_broker(instance, data)
+        self._hide_prices_for_broker(instance, data)
         return data
 
 
@@ -179,6 +206,7 @@ class AuctionCreateSerializer(serializers.ModelSerializer):
             "mode",
             "min_price",
             "min_bid_increment",
+            "show_price_to_brokers",
             "start_date",
             "end_date",
         ]
@@ -411,38 +439,6 @@ class AuctionDetailSerializer(AuctionListSerializer):
 
     class Meta(AuctionListSerializer.Meta):
         fields = AuctionListSerializer.Meta.fields + ["bids", "myBid"]
-
-    def _should_hide_property_price_for_broker(self, prop: Property) -> bool:
-        request = self.context.get("request")
-        user = getattr(request, "user", None)
-
-        if not user or not user.is_authenticated:
-            return False
-
-        return (
-            getattr(user, "role", None) == "broker"
-            and prop.show_price_to_brokers is False
-        )
-
-    def to_representation(self, instance):
-        data = super().to_representation(instance)
-
-        if not data.get("properties"):
-            return data
-
-        hidden_property_ids = {
-            prop.id
-            for prop in instance.properties.all()
-            if self._should_hide_property_price_for_broker(prop)
-        }
-        if not hidden_property_ids:
-            return data
-
-        for prop_data in data["properties"]:
-            if prop_data.get("id") in hidden_property_ids:
-                prop_data["price"] = None
-
-        return data
 
     def get_bids(self, obj: Auction):
         request = self.context.get("request")

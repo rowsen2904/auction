@@ -18,7 +18,6 @@ from .services.rules import (
     ensure_broker_verified,
     ensure_min_price,
     ensure_mode,
-    ensure_not_current_leader,
     ensure_not_owner,
     open_compute_amount,
 )
@@ -112,7 +111,6 @@ def _place_open_bid_atomic_sync(
         )
         ensure_active_window(ctx)
         ensure_not_owner(ctx)
-        ensure_not_current_leader(auction=auction, user_id=user.id)
 
         amount = open_compute_amount(auction=auction, requested=requested_amount)
         ensure_min_price(ctx, amount=amount)

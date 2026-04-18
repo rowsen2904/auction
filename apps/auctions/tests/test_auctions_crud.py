@@ -160,9 +160,6 @@ class TestAuctionsCRUD(APITestCase, AuctionTestMixin):
         self.assertEqual(len(resp.data["bids"]), 1)
 
     def test_detail_closed_properties_hide_price_for_broker_when_disabled(self):
-        self.prop1.show_price_to_brokers = False
-        self.prop1.save(update_fields=["show_price_to_brokers"])
-
         now = timezone.now()
         auc = self.create_auction(
             owner=self.dev1,
@@ -172,6 +169,8 @@ class TestAuctionsCRUD(APITestCase, AuctionTestMixin):
             start=now - timedelta(minutes=5),
             end=now + timedelta(hours=1),
         )
+        auc.show_price_to_brokers = False
+        auc.save(update_fields=["show_price_to_brokers"])
 
         self.client.force_authenticate(user=self.broker1)
         resp = self.client.get(f"{self.BASE}{auc.id}/", format="json")
@@ -180,9 +179,6 @@ class TestAuctionsCRUD(APITestCase, AuctionTestMixin):
         self.assertIsNone(resp.data["properties"][0]["price"])
 
     def test_detail_closed_properties_price_visible_for_developer_when_disabled(self):
-        self.prop1.show_price_to_brokers = False
-        self.prop1.save(update_fields=["show_price_to_brokers"])
-
         now = timezone.now()
         auc = self.create_auction(
             owner=self.dev1,
@@ -192,6 +188,8 @@ class TestAuctionsCRUD(APITestCase, AuctionTestMixin):
             start=now - timedelta(minutes=5),
             end=now + timedelta(hours=1),
         )
+        auc.show_price_to_brokers = False
+        auc.save(update_fields=["show_price_to_brokers"])
 
         self.client.force_authenticate(user=self.dev1)
         resp = self.client.get(f"{self.BASE}{auc.id}/", format="json")

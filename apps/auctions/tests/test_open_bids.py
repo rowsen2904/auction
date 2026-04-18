@@ -277,17 +277,18 @@ class TestOpenBidPlacement(TestCase, AuctionTestMixin):
         self.assertIn("updated_at", bid_data)
 
     @patch("auctions.consumers.add_participant_with_flag", return_value=(1, True))
-    def test_leader_cannot_update_own_bid(self, _add_mock):
+    def test_leader_can_raise_own_bid(self, _add_mock):
         _place_open_bid_atomic_sync(
             auction_id=self.auc.id,
             user=self.broker1,
             requested_amount=Decimal("1000.00"),
         )
 
-        with self.assertRaises(ValidationError) as ctx:
-            _place_open_bid_atomic_sync(
-                auction_id=self.auc.id,
-                user=self.broker1,
-                requested_amount=Decimal("1100.00"),
-            )
-        self.assertIn("самую высокую цену", str(ctx.exception.detail))
+        auction_patch, bid_data, _, is_new = _place_open_bid_atomic_sync(
+            auction_id=self.auc.id,
+            user=self.broker1,
+            requested_amount=Decimal("1100.00"),
+        )
+        self.assertFalse(is_new)
+        self.assertEqual(auction_patch["current_price"], "1100.00")
+        self.assertEqual(bid_data["amount"], "1100.00")
