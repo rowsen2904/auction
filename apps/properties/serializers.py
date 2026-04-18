@@ -21,21 +21,7 @@ class PropertyImageSerializer(serializers.ModelSerializer):
         return request.build_absolute_uri(obj.image.url) if request else obj.image.url
 
 
-class PriceVisibilityMixin:
-    def _should_hide_price_for_broker(self, obj: Property) -> bool:
-        request = self.context.get("request")
-        user = getattr(request, "user", None)
-
-        if not user or not user.is_authenticated:
-            return False
-
-        return (
-            getattr(user, "role", None) == "broker"
-            and obj.show_price_to_brokers is False
-        )
-
-
-class PropertyListSerializer(PriceVisibilityMixin, serializers.ModelSerializer):
+class PropertyListSerializer(serializers.ModelSerializer):
     developer = serializers.IntegerField(source="owner_id", read_only=True)
     images = PropertyImageSerializer(many=True, read_only=True)
     moderation_status = serializers.CharField(read_only=True)
@@ -61,7 +47,6 @@ class PropertyListSerializer(PriceVisibilityMixin, serializers.ModelSerializer):
             "area",
             "property_class",
             "price",
-            "show_price_to_brokers",
             "commission_rate",
             "deadline",
             "delivery_date",
@@ -77,12 +62,6 @@ class PropertyListSerializer(PriceVisibilityMixin, serializers.ModelSerializer):
             "moderation_rejection_reason",
             "is_editable",
         ]
-
-    def to_representation(self, instance):
-        data = super().to_representation(instance)
-        if self._should_hide_price_for_broker(instance):
-            data["price"] = None
-        return data
 
     def get_is_editable(self, obj):
         open_auctions = getattr(obj, "prefetched_open_auctions", None)
@@ -141,7 +120,6 @@ class PropertyCreateSerializer(serializers.ModelSerializer):
         allow_blank=True,
         default="",
     )
-    show_price_to_brokers = serializers.BooleanField(required=False, default=True)
     rooms = serializers.IntegerField(required=False, allow_null=True, min_value=0)
     purpose = serializers.CharField(required=False, allow_null=True, allow_blank=True)
     commercial_subtype = serializers.ChoiceField(
@@ -176,7 +154,6 @@ class PropertyCreateSerializer(serializers.ModelSerializer):
             "area",
             "property_class",
             "price",
-            "show_price_to_brokers",
             "commission_rate",
             "deadline",
             "delivery_date",
@@ -237,7 +214,6 @@ class PropertyUpdateSerializer(serializers.ModelSerializer):
         allow_null=True,
         allow_blank=True,
     )
-    show_price_to_brokers = serializers.BooleanField(required=False)
     rooms = serializers.IntegerField(required=False, allow_null=True, min_value=0)
     purpose = serializers.CharField(required=False, allow_null=True, allow_blank=True)
     commercial_subtype = serializers.ChoiceField(
@@ -268,7 +244,6 @@ class PropertyUpdateSerializer(serializers.ModelSerializer):
         "area",
         "property_class",
         "price",
-        "show_price_to_brokers",
         "deadline",
         "delivery_date",
         "developer_name",
@@ -291,7 +266,6 @@ class PropertyUpdateSerializer(serializers.ModelSerializer):
             "area",
             "property_class",
             "price",
-            "show_price_to_brokers",
             "commission_rate",
             "deadline",
             "delivery_date",

@@ -252,9 +252,11 @@ class BrokerInfoSerializer(serializers.ModelSerializer):
 
 
 class DeveloperInfoSerializer(serializers.ModelSerializer):
+    inn_number = serializers.CharField(source="user.inn_number", read_only=True)
+
     class Meta:
         model = Developer
-        fields = ["company_name"]
+        fields = ["company_name", "phone_number", "inn_number"]
 
 
 class MessageEmailResponseSerializer(serializers.Serializer):

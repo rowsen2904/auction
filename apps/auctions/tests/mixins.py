@@ -84,7 +84,6 @@ class AuctionTestMixin:
         p_class: str = "comfort",
         area: Decimal = Decimal("50.00"),
         price: Decimal = Decimal("1000000.00"),
-        show_price_to_brokers: bool = True,
         status_val: str = "published",
     ) -> Property:
         return Property.objects.create(
@@ -94,7 +93,6 @@ class AuctionTestMixin:
             area=area,
             property_class=p_class,
             price=price,
-            show_price_to_brokers=show_price_to_brokers,
             status=status_val,
         )
 

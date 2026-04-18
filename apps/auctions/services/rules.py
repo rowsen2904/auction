@@ -120,11 +120,15 @@ def ensure_can_cancel(*, auction: Auction, user) -> None:
 def open_compute_amount(*, auction: Auction, requested: Decimal) -> Decimal:
     """
     OPEN rules:
-    - First bid always equals min_price (ignore requested).
+    - First bid: requested must be >= auction.min_price (broker chooses start amount).
     - Afterwards: requested must be >= current_price + auction.min_bid_increment.
     """
     if auction.bids_count == 0 or auction.current_price <= Decimal("0.00"):
-        return auction.min_price
+        if requested < auction.min_price:
+            raise ValidationError(
+                {"detail": f"Первая ставка должна быть не менее {auction.min_price}."}
+            )
+        return requested
 
     step = auction.min_bid_increment
     if step is None:

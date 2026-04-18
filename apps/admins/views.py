@@ -199,6 +199,10 @@ class AdminDeveloperCreateView(generics.GenericAPIView):
 
         validated = serializer.validated_data
         email = validated["email"]
+        inn_number = validated.get("inn_number") or None
+        phone_number = validated.get("phone_number", "") or ""
+        inn_file = validated.get("inn")
+        passport_file = validated.get("passport")
 
         try:
             with transaction.atomic():
@@ -209,11 +213,26 @@ class AdminDeveloperCreateView(generics.GenericAPIView):
                     last_name=validated.get("last_name", ""),
                     role=User.Roles.DEVELOPER,
                     is_active=True,
+                    inn_number=inn_number,
                 )
                 Developer.objects.create(
                     user=user,
                     company_name=validated["company_name"],
+                    phone_number=phone_number,
                 )
+
+                if inn_file:
+                    UserDocument.objects.create(
+                        user=user,
+                        document=inn_file,
+                        doc_type=UserDocument.Types.INN,
+                    )
+                if passport_file:
+                    UserDocument.objects.create(
+                        user=user,
+                        document=passport_file,
+                        doc_type=UserDocument.Types.PASSPORT,
+                    )
 
         except IntegrityError:
             return Response(
@@ -245,8 +264,10 @@ class AdminDeveloperUpdateView(generics.GenericAPIView):
                 "last_name",
                 "role",
                 "is_active",
+                "inn_number",
                 "developer__id",
                 "developer__company_name",
+                "developer__phone_number",
             )
             .filter(role=User.Roles.DEVELOPER),
             pk=pk,
@@ -277,15 +298,32 @@ class AdminDeveloperUpdateView(generics.GenericAPIView):
                         setattr(user, field, validated[field])
                         user_fields.append(field)
 
+                if "inn_number" in validated:
+                    new_inn = validated["inn_number"] or None
+                    if user.inn_number != new_inn:
+                        user.inn_number = new_inn
+                        user_fields.append("inn_number")
+
                 if user_fields:
                     user.save(update_fields=user_fields)
 
+                developer_fields = []
                 if (
                     "company_name" in validated
                     and developer.company_name != validated["company_name"]
                 ):
                     developer.company_name = validated["company_name"]
-                    developer.save(update_fields=["company_name"])
+                    developer_fields.append("company_name")
+
+                if (
+                    "phone_number" in validated
+                    and developer.phone_number != validated["phone_number"]
+                ):
+                    developer.phone_number = validated["phone_number"]
+                    developer_fields.append("phone_number")
+
+                if developer_fields:
+                    developer.save(update_fields=developer_fields)
         except IntegrityError:
             return Response(
                 {"error": _("Пользователь уже существует.")},

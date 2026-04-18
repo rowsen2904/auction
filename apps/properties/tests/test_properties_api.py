@@ -59,7 +59,6 @@ class BasePropertyTestCase(APITestCase):
         area=Decimal("52.50"),
         p_class="comfort",
         price=Decimal("12000000.00"),
-        show_price_to_brokers=True,
         status_val=Property.PropertyStatuses.PUBLISHED,
         moderation_status_val=Property.ModerationStatuses.APPROVED,
         moderation_rejection_reason=None,
@@ -71,7 +70,6 @@ class BasePropertyTestCase(APITestCase):
             area=area,
             property_class=p_class,
             price=price,
-            show_price_to_brokers=show_price_to_brokers,
             status=status_val,
             moderation_status=moderation_status_val,
             moderation_rejection_reason=moderation_rejection_reason,
@@ -241,29 +239,6 @@ class PropertyAPITests(BasePropertyTestCase):
 
         prop = Property.objects.get(address=address)
         self.assertIsNone(prop.commercial_subtype)
-
-    def test_create_property_can_set_show_price_to_brokers_false(self):
-        self.client.force_authenticate(user=self.dev1)
-
-        address = "Moscow, Hidden Broker Price"
-        resp = self.client.post(
-            BASE,
-            data={
-                "type": "apartment",
-                "address": address,
-                "area": "50.00",
-                "property_class": "comfort",
-                "price": "1000000.00",
-                "show_price_to_brokers": False,
-                "status": "draft",
-            },
-            format="json",
-        )
-        self.assertEqual(resp.status_code, status.HTTP_201_CREATED)
-        self.assertEqual(resp.data["show_price_to_brokers"], False)
-
-        prop = Property.objects.get(address=address)
-        self.assertFalse(prop.show_price_to_brokers)
 
     def test_list_properties_paginated(self):
         for i in range(21):
@@ -622,37 +597,6 @@ class PropertyAPITests(BasePropertyTestCase):
         self.assertEqual(resp.status_code, status.HTTP_200_OK)
         self.assertIn("is_editable", resp.data)
         self.assertTrue(resp.data["is_editable"])
-
-    def test_broker_list_hides_price_when_show_price_to_brokers_false(self):
-        prop = self._create_property(
-            self.dev1,
-            address="Broker Hidden Price List",
-            price=Decimal("3330000.00"),
-            show_price_to_brokers=False,
-        )
-
-        self.client.force_authenticate(user=self.broker)
-        resp = self.client.get(BASE, format="json")
-        self.assertEqual(resp.status_code, status.HTTP_200_OK)
-
-        item = next(x for x in resp.data["results"] if x["id"] == prop.id)
-        self.assertIsNone(item["price"])
-        self.assertFalse(item["show_price_to_brokers"])
-
-    def test_broker_detail_hides_price_when_show_price_to_brokers_false(self):
-        prop = self._create_property(
-            self.dev1,
-            address="Broker Hidden Price Detail",
-            price=Decimal("4440000.00"),
-            show_price_to_brokers=False,
-        )
-
-        self.client.force_authenticate(user=self.broker)
-        resp = self.client.get(f"{BASE}{prop.id}/", format="json")
-        self.assertEqual(resp.status_code, status.HTTP_200_OK)
-        self.assertIsNone(resp.data["price"])
-        self.assertFalse(resp.data["show_price_to_brokers"])
-
 
 class MyAvailablePropertiesAPITests(BasePropertyTestCase):
     def test_my_available_properties_requires_auth(self):

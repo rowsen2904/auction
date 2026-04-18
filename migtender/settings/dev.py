@@ -3,6 +3,9 @@ from datetime import timedelta
 from .base import *  # noqa: F401,F403
 from .base import INSTALLED_APPS, MIDDLEWARE
 
+# daphne must be first — enables Channels/WebSocket in runserver
+INSTALLED_APPS = ["daphne", *INSTALLED_APPS]
+
 DEBUG = True
 
 ALLOWED_HOSTS = ["*"]
