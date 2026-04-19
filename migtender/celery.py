@@ -47,4 +47,13 @@ app.conf.beat_schedule = {
         "task": "notifications.tasks.send_admin_daily_payments_summary",
         "schedule": crontab(hour=8, minute=5),
     },
+    # Transit settlement deadlines
+    "settlement-broker-payout-deadlines": {
+        "task": "payments.tasks.check_broker_payout_deadlines",
+        "schedule": crontab(hour=9, minute=30),
+    },
+    "settlement-developer-payment-deadlines": {
+        "task": "payments.tasks.check_developer_payment_deadlines",
+        "schedule": crontab(hour=9, minute=40),
+    },
 }

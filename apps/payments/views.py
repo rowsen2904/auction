@@ -15,17 +15,26 @@ from rest_framework.permissions import IsAdminUser, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .models import Payment
+from django.db import models as _models
+from django.db.models import Sum
+from django.utils import timezone
+
+from .models import DealSettlement, Payment
 from .schemas import (
     payment_list_schema,
     payment_summary_schema,
     payment_upload_receipt_schema,
 )
 from .serializers import (
+    ConfirmDeveloperReceiptSerializer,
+    DealSettlementSerializer,
     DeveloperPaymentSummarySerializer,
+    MarkPaidToBrokerSerializer,
     PaymentListSerializer,
     PaymentSummarySerializer,
     ReceiptUploadSerializer,
+    SettlementSummarySerializer,
+    UploadDeveloperReceiptSerializer,
 )
 
 
@@ -167,5 +176,207 @@ class UploadReceiptView(APIView):
 
         return Response(
             {"detail": "Чек загружен. Выплата отмечена как оплаченная."},
+            status=status.HTTP_200_OK,
+        )
+
+
+# =========================================================================
+# Transit settlement endpoints
+# =========================================================================
+
+
+def _settlement_qs_for_user(user):
+    qs = DealSettlement.objects.select_related(
+        "deal",
+        "deal__real_property",
+        "deal__broker",
+        "deal__developer",
+        "deal__developer__developer",
+    )
+    if user.is_staff or getattr(user, "is_admin", False):
+        return qs
+    if getattr(user, "is_developer", False):
+        return qs.filter(deal__developer=user)
+    # broker
+    return qs.filter(deal__broker=user)
+
+
+class SettlementListView(ListAPIView):
+    permission_classes = [IsAuthenticated]
+    serializer_class = DealSettlementSerializer
+
+    def get_queryset(self):
+        return _settlement_qs_for_user(self.request.user).order_by("-created_at")
+
+
+class SettlementSummaryView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        qs = _settlement_qs_for_user(request.user)
+        total = qs.count()
+        closed = qs.filter(
+            paid_to_broker=True, received_from_developer=True
+        ).count()
+        awaiting_broker = qs.filter(paid_to_broker=False).count()
+        awaiting_dev = qs.filter(received_from_developer=False).count()
+
+        agg = qs.aggregate(
+            owed=Sum("total_from_developer"),
+            paid_to_b=Sum(
+                "broker_amount", filter=_models.Q(paid_to_broker=True)
+            ),
+            received_from_d=Sum(
+                "total_from_developer",
+                filter=_models.Q(received_from_developer=True),
+            ),
+        )
+        data = {
+            "total_settlements": total,
+            "closed": closed,
+            "awaiting_broker_payout": awaiting_broker,
+            "awaiting_developer_payment": awaiting_dev,
+            "total_owed_by_developers": agg["owed"] or Decimal("0.00"),
+            "total_paid_to_brokers": agg["paid_to_b"] or Decimal("0.00"),
+            "total_received_from_developers": agg["received_from_d"]
+            or Decimal("0.00"),
+        }
+        return Response(SettlementSummarySerializer(data).data)
+
+
+class MarkPaidToBrokerView(APIView):
+    """Admin marks that the platform has paid the broker (uploads receipt)."""
+
+    permission_classes = [IsAdminUser]
+    parser_classes = [MultiPartParser, FormParser]
+
+    def post(self, request, pk: int):
+        ser = MarkPaidToBrokerSerializer(data=request.data)
+        ser.is_valid(raise_exception=True)
+
+        with transaction.atomic():
+            s = get_object_or_404(
+                DealSettlement.objects.select_for_update(), pk=pk
+            )
+            if s.paid_to_broker:
+                raise ValidationError(
+                    {"detail": _("Уже отмечено как выплаченное брокеру.")}
+                )
+
+            s.broker_payout_receipt = ser.validated_data["broker_payout_receipt"]
+            s.paid_to_broker = True
+            s.paid_to_broker_at = timezone.now()
+            s.save(
+                update_fields=[
+                    "broker_payout_receipt",
+                    "paid_to_broker",
+                    "paid_to_broker_at",
+                    "updated_at",
+                ]
+            )
+
+        try:
+            from notifications.services import notify_broker_paid_out
+
+            notify_broker_paid_out(settlement=s)
+        except Exception:
+            pass
+
+        return Response(
+            DealSettlementSerializer(s, context={"request": request}).data,
+            status=status.HTTP_200_OK,
+        )
+
+
+class UploadDeveloperReceiptView(APIView):
+    """Developer uploads receipt that they paid the platform (3% + 0.4%)."""
+
+    permission_classes = [IsAuthenticated]
+    parser_classes = [MultiPartParser, FormParser]
+
+    def post(self, request, pk: int):
+        ser = UploadDeveloperReceiptSerializer(data=request.data)
+        ser.is_valid(raise_exception=True)
+
+        with transaction.atomic():
+            s = get_object_or_404(
+                DealSettlement.objects.select_for_update(), pk=pk
+            )
+            if s.deal.developer_id != request.user.id and not (
+                request.user.is_staff or getattr(request.user, "is_admin", False)
+            ):
+                raise ValidationError(
+                    {"detail": _("Это расчёт не по вашей сделке.")}
+                )
+            if s.received_from_developer:
+                raise ValidationError(
+                    {"detail": _("Оплата уже подтверждена админом.")}
+                )
+
+            s.developer_receipt = ser.validated_data["developer_receipt"]
+            s.developer_receipt_uploaded_at = timezone.now()
+            s.save(
+                update_fields=[
+                    "developer_receipt",
+                    "developer_receipt_uploaded_at",
+                    "updated_at",
+                ]
+            )
+
+        try:
+            from notifications.services import notify_developer_receipt_uploaded
+
+            notify_developer_receipt_uploaded(settlement=s)
+        except Exception:
+            pass
+
+        return Response(
+            DealSettlementSerializer(s, context={"request": request}).data,
+            status=status.HTTP_200_OK,
+        )
+
+
+class ConfirmDeveloperReceiptView(APIView):
+    """Admin confirms they received the money from the developer."""
+
+    permission_classes = [IsAdminUser]
+
+    def post(self, request, pk: int):
+        ConfirmDeveloperReceiptSerializer(data=request.data).is_valid(
+            raise_exception=True
+        )
+
+        with transaction.atomic():
+            s = get_object_or_404(
+                DealSettlement.objects.select_for_update(), pk=pk
+            )
+            if s.received_from_developer:
+                raise ValidationError(
+                    {"detail": _("Уже подтверждено.")}
+                )
+            if not s.developer_receipt:
+                raise ValidationError(
+                    {"detail": _("Девелопер ещё не загрузил чек.")}
+                )
+
+            s.received_from_developer = True
+            s.received_from_developer_at = timezone.now()
+            s.save(
+                update_fields=[
+                    "received_from_developer",
+                    "received_from_developer_at",
+                    "updated_at",
+                ]
+            )
+
+        try:
+            from notifications.services import notify_developer_payment_received
+
+            notify_developer_payment_received(settlement=s)
+        except Exception:
+            pass
+
+        return Response(
+            DealSettlementSerializer(s, context={"request": request}).data,
             status=status.HTTP_200_OK,
         )

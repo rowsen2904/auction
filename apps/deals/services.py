@@ -69,40 +69,60 @@ def create_deal_from_bid(*, auction, bid, real_property) -> Deal:
 
 
 def create_payments_for_deal(deal: Deal) -> None:
-    from payments.models import Payment
+    """Deprecated. Use create_settlement_for_deal. Kept as thin proxy for
+    backward compatibility with old call sites."""
+    return create_settlement_for_deal(deal)
+
+
+def create_settlement_for_deal(deal: Deal):
+    """Create a DealSettlement for a CONFIRMED deal.
+
+    Transit flow:
+      1. Platform pays broker `broker_amount` (x% of deal.amount) within 3 days.
+      2. Developer pays platform `total_from_developer` (x% + 0.4%) within 6 months.
+    """
+    from datetime import timedelta as _td
+
+    from django.utils import timezone
+    from payments.models import DealSettlement
+
+    existing = DealSettlement.objects.filter(deal=deal).first()
+    if existing is not None:
+        return existing
 
     prop = deal.real_property
-
     broker_rate = prop.commission_rate or Decimal("0.00")
-    if broker_rate > 0:
-        broker_amount = (deal.amount * broker_rate / 100).quantize(Decimal("0.01"))
-        Payment.objects.get_or_create(
-            deal=deal,
-            type=Payment.Type.DEVELOPER_COMMISSION,
-            defaults={
-                "amount": broker_amount,
-                "rate": broker_rate,
-                "status": Payment.Status.PENDING,
-            },
-        )
-
     platform_rate = Decimal(
         str(getattr(settings, "PLATFORM_COMMISSION_RATE", Decimal("0.40")))
     )
+
+    broker_amount = (deal.amount * broker_rate / 100).quantize(Decimal("0.01"))
     platform_amount = (deal.amount * platform_rate / 100).quantize(Decimal("0.01"))
-    Payment.objects.get_or_create(
+    total_from_developer = (broker_amount + platform_amount).quantize(Decimal("0.01"))
+
+    now = timezone.now()
+    broker_days = int(getattr(settings, "SETTLEMENT_BROKER_PAYOUT_DAYS", 3))
+    developer_days = int(getattr(settings, "SETTLEMENT_DEVELOPER_PAYMENT_DAYS", 180))
+
+    settlement = DealSettlement.objects.create(
         deal=deal,
-        type=Payment.Type.PLATFORM_COMMISSION,
-        defaults={
-            "amount": platform_amount,
-            "rate": platform_rate,
-            "status": Payment.Status.PENDING,
-        },
+        broker_amount=broker_amount,
+        broker_rate=broker_rate,
+        platform_amount=platform_amount,
+        platform_rate=platform_rate,
+        total_from_developer=total_from_developer,
+        broker_payout_deadline=now + _td(days=broker_days),
+        developer_payment_deadline=now + _td(days=developer_days),
     )
 
-    from notifications.services import notify_payments_created
+    try:
+        from notifications.services import notify_payments_created
 
-    notify_payments_created(deal=deal)
+        notify_payments_created(deal=deal)
+    except Exception:
+        pass
+
+    return settlement
 
 
 def submit_deal_for_review(deal: Deal, actor=None) -> bool:

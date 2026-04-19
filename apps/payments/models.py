@@ -15,6 +15,18 @@ def payment_receipt_upload_to(instance: "Payment", filename: str) -> str:
     return f"payments/{payment_id}/{uuid4().hex}.{ext}"
 
 
+def broker_payout_receipt_upload_to(instance: "DealSettlement", filename: str) -> str:
+    ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else "bin"
+    sid = instance.id or "tmp"
+    return f"settlements/{sid}/broker_payout/{uuid4().hex}.{ext}"
+
+
+def developer_receipt_upload_to(instance: "DealSettlement", filename: str) -> str:
+    ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else "bin"
+    sid = instance.id or "tmp"
+    return f"settlements/{sid}/developer/{uuid4().hex}.{ext}"
+
+
 class Payment(models.Model):
     class Type(models.TextChoices):
         DEVELOPER_COMMISSION = "developer_commission", _("Developer Commission")
@@ -85,3 +97,104 @@ class Payment(models.Model):
 
     def __str__(self) -> str:
         return f"Payment #{self.id} [{self.type}] deal={self.deal_id} {self.amount}"
+
+
+class DealSettlement(models.Model):
+    """
+    Транзитный расчёт по одной сделке.
+
+    Флоу:
+      1. Сделка подтверждена (Deal.status=CONFIRMED) → создаётся Settlement.
+      2. Платформа платит брокеру `broker_amount` (x%). Админ фиксирует
+         факт в платформе, загружая чек. paid_to_broker=True.
+         Дедлайн: broker_payout_deadline = created_at + 3 дня.
+      3. Девелопер обязан в течение 6 месяцев перевести платформе
+         total_from_developer = broker_amount + platform_amount. Девелопер
+         загружает чек (developer_receipt), админ подтверждает поступление
+         (received_from_developer=True).
+    Когда оба флага True — сделка "финансово закрыта".
+    """
+
+    deal = models.OneToOneField(
+        "deals.Deal",
+        on_delete=models.PROTECT,
+        related_name="settlement",
+    )
+
+    # Амоунты — фиксируются в момент создания (snapshot)
+    broker_amount = models.DecimalField(
+        _("К выплате брокеру"),
+        max_digits=14,
+        decimal_places=2,
+    )
+    broker_rate = models.DecimalField(
+        _("Ставка брокера (%)"),
+        max_digits=5,
+        decimal_places=2,
+    )
+    platform_amount = models.DecimalField(
+        _("Комиссия платформы"),
+        max_digits=14,
+        decimal_places=2,
+    )
+    platform_rate = models.DecimalField(
+        _("Ставка платформы (%)"),
+        max_digits=5,
+        decimal_places=2,
+    )
+    total_from_developer = models.DecimalField(
+        _("Долг девелопера"),
+        max_digits=14,
+        decimal_places=2,
+        help_text=_("broker_amount + platform_amount"),
+    )
+
+    # Этап 1: платформа → брокеру
+    paid_to_broker = models.BooleanField(default=False, db_index=True)
+    paid_to_broker_at = models.DateTimeField(null=True, blank=True)
+    broker_payout_receipt = models.FileField(
+        _("Чек выплаты брокеру"),
+        upload_to=broker_payout_receipt_upload_to,
+        null=True,
+        blank=True,
+    )
+    broker_payout_deadline = models.DateTimeField(db_index=True)
+
+    # Этап 2: девелопер → платформе
+    received_from_developer = models.BooleanField(default=False, db_index=True)
+    received_from_developer_at = models.DateTimeField(null=True, blank=True)
+    developer_receipt = models.FileField(
+        _("Чек девелопера"),
+        upload_to=developer_receipt_upload_to,
+        null=True,
+        blank=True,
+    )
+    developer_receipt_uploaded_at = models.DateTimeField(null=True, blank=True)
+    developer_payment_deadline = models.DateTimeField(db_index=True)
+
+    created_at = models.DateTimeField(default=timezone.now, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = _("Расчёт по сделке")
+        verbose_name_plural = _("Расчёты по сделкам")
+        ordering = ["-created_at"]
+
+    def __str__(self) -> str:
+        return f"Settlement #{self.id} deal={self.deal_id}"
+
+    @property
+    def is_financially_closed(self) -> bool:
+        return self.paid_to_broker and self.received_from_developer
+
+    @property
+    def broker_payout_overdue(self) -> bool:
+        if self.paid_to_broker:
+            return False
+        return timezone.now() > self.broker_payout_deadline
+
+    @property
+    def developer_payment_overdue(self) -> bool:
+        if self.received_from_developer:
+            return False
+        return timezone.now() > self.developer_payment_deadline
