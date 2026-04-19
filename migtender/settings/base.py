@@ -325,4 +325,8 @@ PLATFORM_COMMISSION_RATE = _Decimal("0.40")  # 0.4%
 DEAL_DOCUMENT_DEADLINE_DAYS = 7
 DEAL_PENDING_DOCUMENTS_FAIL_DAYS = 5
 
+# Transit settlement deadlines
+SETTLEMENT_BROKER_PAYOUT_DAYS = 3  # платформа → брокер после подтверждения сделки
+SETTLEMENT_DEVELOPER_PAYMENT_DAYS = 180  # 6 месяцев девелоперу на возврат платформе
+
 NOTIFICATION_DEVELOPER_CONFIRM_REMINDER_DAYS = 3

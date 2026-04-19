@@ -889,3 +889,63 @@ def notify_admin_daily_payments_summary(
         data={"count": count, "total": str(total), "date": str(summary_date)},
         dedupe_key=f"notif:daily_payments_summary:admin:{admin_user.id}:date:{summary_date}",
     )
+
+
+# -------- Transit settlement notifications --------
+
+
+def notify_broker_paid_out(*, settlement) -> None:
+    create_notification(
+        user=settlement.deal.broker,
+        category=Notification.Category.PAYMENT,
+        event_type=NotificationEvent.PAYMENT_PAID,
+        message=(
+            f"Платформа выплатила вам {settlement.broker_amount} ₽ "
+            f"по сделке #{settlement.deal_id}."
+        ),
+        data={
+            "settlement_id": settlement.id,
+            "deal_id": settlement.deal_id,
+            "amount": str(settlement.broker_amount),
+        },
+        dedupe_key=f"notif:settlement_paid_to_broker:{settlement.id}",
+    )
+
+
+def notify_developer_receipt_uploaded(*, settlement) -> None:
+    from django.contrib.auth import get_user_model
+
+    User = get_user_model()
+    for admin in User.objects.filter(is_staff=True):
+        create_notification(
+            user=admin,
+            category=Notification.Category.PAYMENT,
+            event_type=NotificationEvent.PAYMENT_PAID,
+            message=(
+                f"Девелопер загрузил чек по сделке #{settlement.deal_id}"
+                f" на сумму {settlement.total_from_developer} ₽ — "
+                "проверьте и подтвердите."
+            ),
+            data={
+                "settlement_id": settlement.id,
+                "deal_id": settlement.deal_id,
+            },
+            dedupe_key=f"notif:settlement_dev_receipt:{settlement.id}:{admin.id}",
+        )
+
+
+def notify_developer_payment_received(*, settlement) -> None:
+    create_notification(
+        user=settlement.deal.developer,
+        category=Notification.Category.PAYMENT,
+        event_type=NotificationEvent.PAYMENT_PAID,
+        message=(
+            f"Платформа подтвердила получение оплаты по сделке "
+            f"#{settlement.deal_id}."
+        ),
+        data={
+            "settlement_id": settlement.id,
+            "deal_id": settlement.deal_id,
+        },
+        dedupe_key=f"notif:settlement_dev_received:{settlement.id}",
+    )
