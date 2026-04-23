@@ -202,6 +202,50 @@ Important:
 """
 
 
+participated_auctions_schema = extend_schema(
+    summary="My participated auctions (broker)",
+    description=(
+        "Returns auctions in which the authenticated broker has placed at least one bid.\n\n"
+        "Supports the same filters, ordering and pagination as the public list.\n"
+        "Only available to authenticated brokers."
+    ),
+    parameters=[
+        OpenApiParameter(
+            "mode", OpenApiTypes.STR, required=False, description="open | closed"
+        ),
+        OpenApiParameter(
+            "status",
+            OpenApiTypes.STR,
+            required=False,
+            description="scheduled | active | finished | cancelled",
+        ),
+        OpenApiParameter("propertyId", OpenApiTypes.INT, required=False),
+        OpenApiParameter("active", OpenApiTypes.BOOL, required=False),
+        OpenApiParameter("starts_before", OpenApiTypes.DATETIME, required=False),
+        OpenApiParameter("starts_after", OpenApiTypes.DATETIME, required=False),
+        OpenApiParameter("ends_before", OpenApiTypes.DATETIME, required=False),
+        OpenApiParameter("ends_after", OpenApiTypes.DATETIME, required=False),
+        OpenApiParameter("ordering", OpenApiTypes.STR, required=False),
+        OpenApiParameter("page", OpenApiTypes.INT, required=False),
+        OpenApiParameter("page_size", OpenApiTypes.INT, required=False),
+    ],
+    responses={
+        200: OpenApiResponse(
+            response=AuctionListSerializer,
+            description="Paginated list of auctions broker participated in.",
+        ),
+        401: OpenApiResponse(
+            response=DRFDetailErrorSerializer,
+            description="Unauthorized.",
+        ),
+        403: OpenApiResponse(
+            response=DRFDetailErrorSerializer,
+            description="Forbidden (broker only).",
+        ),
+    },
+    tags=["Auctions"],
+)
+
 auction_list_schema = extend_schema(
     summary="List auctions",
     description=AUCTION_LIST_DOC,

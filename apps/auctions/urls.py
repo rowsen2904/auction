@@ -3,6 +3,7 @@ from django.urls import path
 from .views.auctions import (
     AuctionDetailView,
     AuctionListCreateView,
+    BrokerParticipatedAuctionsView,
     MyAuctionListView,
 )
 from .views.cancel import AuctionCancelView
@@ -29,6 +30,11 @@ app_name = "auctions"
 urlpatterns = [
     path("", AuctionListCreateView.as_view(), name="auction-list-create"),
     path("my/", MyAuctionListView.as_view(), name="auction-my-list"),
+    path(
+        "participated/",
+        BrokerParticipatedAuctionsView.as_view(),
+        name="auction-participated",
+    ),
     path("<int:pk>/", AuctionDetailView.as_view(), name="auction-detail"),
     path("<int:pk>/cancel/", AuctionCancelView.as_view(), name="auction-cancel"),
     path("<int:pk>/join/", AuctionJoinView.as_view(), name="auction-join"),

@@ -3,13 +3,14 @@ from __future__ import annotations
 from auctions.filters import AuctionFilter
 from auctions.models import Auction
 from auctions.paginations import AuctionPagination
-from auctions.permissions import IsDeveloper
+from auctions.permissions import IsBroker, IsDeveloper
 from auctions.schemas import (
     auction_create_schema,
     auction_detail_schema,
     auction_list_schema,
     auction_select_winners_schema,
     my_auctions_schema,
+    participated_auctions_schema,
 )
 from auctions.serializers import (
     AuctionCreateSerializer,
@@ -61,6 +62,35 @@ class MyAuctionListView(generics.ListAPIView):
         return _auction_base_queryset().filter(owner=self.request.user)
 
     @my_auctions_schema
+    def get(self, request, *args, **kwargs):
+        return super().get(request, *args, **kwargs)
+
+
+class BrokerParticipatedAuctionsView(generics.ListAPIView):
+    """Auctions in which the current broker has placed at least one bid."""
+
+    pagination_class = AuctionPagination
+    serializer_class = AuctionListSerializer
+    permission_classes = [IsAuthenticated, IsBroker]
+    filterset_class = AuctionFilter
+
+    ordering = ["-created_at"]
+    ordering_fields = [
+        "created_at",
+        "start_date",
+        "end_date",
+        "current_price",
+        "bids_count",
+    ]
+
+    def get_queryset(self):
+        return (
+            _auction_base_queryset()
+            .filter(bids__broker=self.request.user)
+            .distinct()
+        )
+
+    @participated_auctions_schema
     def get(self, request, *args, **kwargs):
         return super().get(request, *args, **kwargs)
 
