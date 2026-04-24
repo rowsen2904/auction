@@ -7,6 +7,9 @@ from .views import (
     GetVerificationCodeView,
     LoginView,
     MeView,
+    PasswordResetConfirmView,
+    PasswordResetRequestView,
+    PasswordResetVerifyView,
     RegisterBrokerView,
     ResendCodeView,
     UserDocumentDeleteView,
@@ -31,6 +34,22 @@ urlpatterns = [
     ),
     # Change password
     path("change-password/", ChangePasswordView.as_view(), name="change-password"),
+    # Password reset (forgot password)
+    path(
+        "password-reset/request/",
+        PasswordResetRequestView.as_view(),
+        name="password-reset-request",
+    ),
+    path(
+        "password-reset/verify/",
+        PasswordResetVerifyView.as_view(),
+        name="password-reset-verify",
+    ),
+    path(
+        "password-reset/confirm/",
+        PasswordResetConfirmView.as_view(),
+        name="password-reset-confirm",
+    ),
     # Current user
     path("me/", MeView.as_view(), name="me"),
     # User documents

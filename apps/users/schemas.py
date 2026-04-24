@@ -8,6 +8,8 @@ from .serializers import (
     LoginSerializer,
     MessageEmailResponseSerializer,
     MessageResponseSerializer,
+    PasswordResetConfirmSerializer,
+    PasswordResetVerifySerializer,
     RateLimitResponseSerializer,
     RegisterBrokerSerializer,
     RegisterResponseSerializer,
@@ -101,6 +103,79 @@ resend_code_schema = extend_schema(
         ),
         429: OpenApiResponse(
             response=RateLimitResponseSerializer, description="Rate limit exceeded."
+        ),
+    },
+    tags=["Auth"],
+)
+
+PASSWORD_RESET_REQUEST_DOC = (
+    "Sends a numeric OTP code to an existing user's email for password reset.\n\n"
+    "- Returns **200** if the code was sent\n"
+    "- Returns **404** if no active user with that email exists\n"
+    "- Returns **429** on rate-limit\n\n"
+    "**Important:** This endpoint does **not** change the password."
+)
+
+PASSWORD_RESET_VERIFY_DOC = (
+    "Verifies the OTP code for password reset.\n\n"
+    "On success marks the email as verified for password reset within a short TTL,\n"
+    "allowing a follow-up call to `password-reset/confirm/` to set a new password.\n\n"
+    "**Important:** This endpoint does **not** change the password."
+)
+
+PASSWORD_RESET_CONFIRM_DOC = (
+    "Sets a new password for a user whose email was verified via\n"
+    "`password-reset/request/` + `password-reset/verify/`.\n\n"
+    "Requirements:\n"
+    "- Email must be verified for password reset beforehand (short-lived flag).\n"
+    "- `new_password` must pass Django password validators.\n"
+    "- `new_password` must equal `new_password_confirm`."
+)
+
+password_reset_request_schema = extend_schema(
+    summary="Request password reset code",
+    description=PASSWORD_RESET_REQUEST_DOC,
+    request=EmailSerializer,
+    responses={
+        200: OpenApiResponse(
+            response=MessageEmailResponseSerializer,
+            description="Password reset code sent.",
+        ),
+        404: OpenApiResponse(
+            response=ErrorResponseSerializer, description="User not found."
+        ),
+        429: OpenApiResponse(
+            response=RateLimitResponseSerializer, description="Rate limit exceeded."
+        ),
+    },
+    tags=["Auth"],
+)
+
+password_reset_verify_schema = extend_schema(
+    summary="Verify password reset code",
+    description=PASSWORD_RESET_VERIFY_DOC,
+    request=PasswordResetVerifySerializer,
+    responses={
+        200: OpenApiResponse(
+            response=MessageEmailResponseSerializer,
+            description="Password reset code verified.",
+        ),
+        400: OpenApiResponse(description="Invalid or expired code."),
+    },
+    tags=["Auth"],
+)
+
+password_reset_confirm_schema = extend_schema(
+    summary="Confirm password reset",
+    description=PASSWORD_RESET_CONFIRM_DOC,
+    request=PasswordResetConfirmSerializer,
+    responses={
+        200: OpenApiResponse(
+            response=MessageResponseSerializer, description="Password has been reset."
+        ),
+        400: OpenApiResponse(
+            response=ErrorResponseSerializer,
+            description="Validation error (email not verified, password mismatch, weak password).",
         ),
     },
     tags=["Auth"],

@@ -12,7 +12,12 @@ from helpers.validators import FileSizeValidationMixin
 from migtender.settings import EMAIL_VERIFICATION_CODE_LENGTH
 
 from .models import Broker, Developer, UserDocument
-from .utils import is_email_verified_for_registration, verify_code
+from .utils import (
+    is_email_verified_for_password_reset,
+    is_email_verified_for_registration,
+    verify_code,
+    verify_password_reset_code,
+)
 from .validators import validate_inn
 
 
@@ -522,6 +527,88 @@ class UserProfileUpdateSerializer(serializers.Serializer):
                 developer.company_name = validated["company_name"]
                 developer.save(update_fields=["company_name"])
 
+        return user
+
+
+class PasswordResetVerifySerializer(serializers.Serializer):
+    email = serializers.EmailField()
+    code = serializers.CharField(
+        max_length=EMAIL_VERIFICATION_CODE_LENGTH,
+        min_length=EMAIL_VERIFICATION_CODE_LENGTH,
+        required=True,
+        help_text=f"{EMAIL_VERIFICATION_CODE_LENGTH}-digit OTP code",
+    )
+
+    def validate(self, data):
+        if not verify_password_reset_code(data["email"], data["code"]):
+            raise serializers.ValidationError({"code": _("Неверный или истекший код.")})
+        return data
+
+
+class PasswordResetConfirmSerializer(serializers.Serializer):
+    email = serializers.EmailField()
+    new_password = serializers.CharField(
+        write_only=True,
+        min_length=8,
+        max_length=128,
+        required=True,
+        style={"input_type": "password"},
+    )
+    new_password_confirm = serializers.CharField(
+        write_only=True,
+        min_length=8,
+        max_length=128,
+        required=True,
+        style={"input_type": "password"},
+    )
+
+    def validate_email(self, value: str) -> str:
+        email = value.strip().lower()
+
+        if not is_email_verified_for_password_reset(email):
+            raise serializers.ValidationError(
+                _("Email не подтверждён."),
+                code="email_not_verified",
+            )
+
+        if not User.objects.filter(email=email).exists():
+            raise serializers.ValidationError(
+                _("Пользователь не найден."),
+                code="user_not_found",
+            )
+
+        return email
+
+    def validate(self, attrs):
+        new_password = attrs.get("new_password")
+        new_password_confirm = attrs.get("new_password_confirm")
+
+        if new_password != new_password_confirm:
+            raise serializers.ValidationError(
+                {"new_password_confirm": [_("Пароли не совпадают.")]},
+                code="passwords_do_not_match",
+            )
+
+        try:
+            user = User.objects.get(email=attrs["email"])
+        except User.DoesNotExist:
+            user = None
+
+        try:
+            validate_password(password=new_password, user=user)
+        except DjangoValidationError as e:
+            raise serializers.ValidationError(
+                {"new_password": e.messages},
+                code="password_invalid",
+            )
+
+        attrs["user"] = user
+        return attrs
+
+    def save(self, **kwargs):
+        user = self.validated_data["user"]
+        user.set_password(self.validated_data["new_password"])
+        user.save(update_fields=["password"])
         return user
 
 

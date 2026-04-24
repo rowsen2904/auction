@@ -186,3 +186,76 @@ def is_email_verified_for_registration(email: str) -> bool:
 
 def clear_email_verified_for_registration(email: str) -> None:
     cache.delete(get_registration_verified_key(email))
+
+
+# Password reset utils
+
+
+def get_password_reset_code_key(email: str) -> str:
+    return f"password_reset_code:{norm_email(email)}"
+
+
+def get_password_reset_verified_key(email: str) -> str:
+    return f"password_reset_verified:{norm_email(email)}"
+
+
+def send_password_reset_email_to(
+    email: str, ip_address: Optional[str] = None
+) -> str:
+    email = norm_email(email)
+    code_len = getattr(settings, "EMAIL_VERIFICATION_CODE_LENGTH", 6)
+    expiry_seconds = getattr(settings, "EMAIL_VERIFICATION_CODE_EXPIRY", 15 * 60)
+    code = generate_code(code_len)
+    cache.set(get_password_reset_code_key(email), code, expiry_seconds)
+    subject = "Password reset - MIG Tender"
+    message = f"""
+Hello!
+
+Your password reset code: {code}
+
+The code is valid for 15 minutes.
+
+If you did not request a password reset, simply ignore this email —
+your current password will remain unchanged.
+
+With regards,
+The MIG Tender team
+""".strip()
+    send_mail(
+        subject=subject,
+        message=message,
+        from_email=getattr(settings, "DEFAULT_FROM_EMAIL", None),
+        recipient_list=[email],
+        fail_silently=False,
+    )
+    if ip_address:
+        email_rate_limiter.record_email_send(ip_address, email)
+    return code
+
+
+def verify_password_reset_code(email: str, code: str) -> bool:
+    email = norm_email(email)
+    cache_key = get_password_reset_code_key(email)
+    stored_code = cache.get(cache_key)
+    if stored_code and stored_code == code.strip():
+        cache.delete(cache_key)
+        return True
+    return False
+
+
+def mark_email_verified_for_password_reset(
+    email: str, ttl_seconds: Optional[int] = None
+) -> None:
+    if ttl_seconds is None:
+        ttl_seconds = getattr(
+            settings, "EMAIL_PASSWORD_RESET_VERIFIED_TTL", 15 * 60
+        )
+    cache.set(get_password_reset_verified_key(email), True, ttl_seconds)
+
+
+def is_email_verified_for_password_reset(email: str) -> bool:
+    return bool(cache.get(get_password_reset_verified_key(email)))
+
+
+def clear_email_verified_for_password_reset(email: str) -> None:
+    cache.delete(get_password_reset_verified_key(email))
