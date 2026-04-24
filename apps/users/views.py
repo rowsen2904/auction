@@ -18,6 +18,9 @@ from .models import Broker, UserDocument
 from .schemas import (
     get_verification_code_schema,
     login_schema,
+    password_reset_confirm_schema,
+    password_reset_request_schema,
+    password_reset_verify_schema,
     refresh_schema,
     register_broker_schema,
     resend_code_schema,
@@ -29,6 +32,8 @@ from .serializers import (
     LoginSerializer,
     MeSerializer,
     MessageResponseSerializer,
+    PasswordResetConfirmSerializer,
+    PasswordResetVerifySerializer,
     RegisterBrokerSerializer,
     RegisterResponseSerializer,
     UnifiedDocumentSerializer,
@@ -40,9 +45,12 @@ from .serializers import (
     VerifyEmailSerializer,
 )
 from .utils import (
+    clear_email_verified_for_password_reset,
     clear_email_verified_for_registration,
     email_rate_limiter,
+    mark_email_verified_for_password_reset,
     mark_email_verified_for_registration,
+    send_password_reset_email_to,
     send_verification_email_to,
 )
 
@@ -444,6 +452,89 @@ class AllDocumentsView(APIView):
 
         serializer = UnifiedDocumentSerializer(results, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+class PasswordResetRequestView(generics.GenericAPIView):
+    permission_classes = [AllowAny]
+    serializer_class = EmailSerializer
+    parser_classes = [JSONParser]
+
+    @password_reset_request_schema
+    def post(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        email = serializer.validated_data["email"]
+        client_ip = get_client_ip(request)
+
+        if not User.objects.filter(email=email, is_active=True).exists():
+            return Response(
+                {"error": _("Пользователь не найден.")},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        rate_limit_result = email_rate_limiter.check_rate_limit(client_ip, email)
+        if not rate_limit_result.allowed:
+            return Response(
+                {
+                    "error": rate_limit_result.message,
+                    "remaining_time": rate_limit_result.remaining_time,
+                    "code": "rate_limit_exceeded",
+                },
+                status=status.HTTP_429_TOO_MANY_REQUESTS,
+            )
+
+        try:
+            send_password_reset_email_to(email, client_ip)
+            return Response(
+                {
+                    "message": "Код для восстановления пароля отправлен на вашу почту.",
+                    "email": email,
+                },
+                status=status.HTTP_200_OK,
+            )
+        except Exception:
+            return Response(
+                {"error": "Не удалось отправить письмо. Попробуйте позже."},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+
+class PasswordResetVerifyView(generics.GenericAPIView):
+    permission_classes = [AllowAny]
+    serializer_class = PasswordResetVerifySerializer
+    parser_classes = [JSONParser]
+
+    @password_reset_verify_schema
+    def post(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        email = serializer.validated_data["email"]
+        mark_email_verified_for_password_reset(email)
+
+        return Response(
+            {"message": "Код подтверждён.", "email": email},
+            status=status.HTTP_200_OK,
+        )
+
+
+class PasswordResetConfirmView(generics.GenericAPIView):
+    permission_classes = [AllowAny]
+    serializer_class = PasswordResetConfirmSerializer
+    parser_classes = [JSONParser]
+
+    @password_reset_confirm_schema
+    def post(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        user = serializer.save()
+        clear_email_verified_for_password_reset(user.email)
+
+        return Response(
+            {"message": _("Пароль успешно изменён.")},
+            status=status.HTTP_200_OK,
+        )
 
 
 class ChangePasswordView(generics.GenericAPIView):
