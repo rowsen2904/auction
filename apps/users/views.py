@@ -28,6 +28,7 @@ from .schemas import (
 )
 from .serializers import (
     ChangePasswordSerializer,
+    DeveloperDDUTemplateUploadSerializer,
     EmailSerializer,
     LoginSerializer,
     MeSerializer,
@@ -452,6 +453,49 @@ class AllDocumentsView(APIView):
 
         serializer = UnifiedDocumentSerializer(results, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+class DeveloperDDUTemplateView(generics.GenericAPIView):
+    permission_classes = [IsAuthenticated]
+    serializer_class = DeveloperDDUTemplateUploadSerializer
+    parser_classes = [MultiPartParser, FormParser]
+
+    @extend_schema(
+        summary="Upload / replace developer's DDU template",
+        tags=["Auth"],
+        request=DeveloperDDUTemplateUploadSerializer,
+        responses={200: MessageResponseSerializer},
+    )
+    def put(self, request, *args, **kwargs):
+        user = request.user
+        developer = getattr(user, "developer", None)
+        if developer is None:
+            return Response(
+                {"detail": _("Только девелопер может загружать шаблон ДДУ.")},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        new_file = serializer.validated_data["ddu_template"]
+
+        if developer.ddu_template:
+            developer.ddu_template.delete(save=False)
+
+        developer.ddu_template = new_file
+        developer.save(update_fields=["ddu_template"])
+
+        url = developer.ddu_template.url if developer.ddu_template else None
+        if url and request:
+            url = request.build_absolute_uri(url)
+
+        return Response(
+            {
+                "message": _("Шаблон ДДУ обновлён."),
+                "ddu_template_url": url,
+            },
+            status=status.HTTP_200_OK,
+        )
 
 
 class PasswordResetRequestView(generics.GenericAPIView):

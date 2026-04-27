@@ -34,6 +34,7 @@ class DealListSerializer(serializers.ModelSerializer):
     has_payment_proof = serializers.SerializerMethodField()
     ddu_document = serializers.SerializerMethodField()
     payment_proof_document = serializers.SerializerMethodField()
+    developer_ddu_template_url = serializers.SerializerMethodField()
 
     broker_commission_rate = serializers.DecimalField(
         source="real_property.commission_rate",
@@ -67,6 +68,7 @@ class DealListSerializer(serializers.ModelSerializer):
             "has_payment_proof",
             "ddu_document",
             "payment_proof_document",
+            "developer_ddu_template_url",
             "broker_commission_rate",
             "broker_commission_amount",
             "platform_commission_rate",
@@ -105,6 +107,10 @@ class DealListSerializer(serializers.ModelSerializer):
 
     def get_payment_proof_document(self, obj):
         return self._build_url(obj.payment_proof_document)
+
+    def get_developer_ddu_template_url(self, obj):
+        dev = getattr(obj.developer, "developer", None)
+        return self._build_url(dev.ddu_template) if dev else None
 
     def get_broker_commission_amount(self, obj):
         rate = obj.real_property.commission_rate or Decimal("0.00")

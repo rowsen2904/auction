@@ -4,6 +4,7 @@ from .views import (
     AllDocumentsView,
     ChangePasswordView,
     CustomTokenRefreshView,
+    DeveloperDDUTemplateView,
     GetVerificationCodeView,
     LoginView,
     MeView,
@@ -52,6 +53,12 @@ urlpatterns = [
     ),
     # Current user
     path("me/", MeView.as_view(), name="me"),
+    # Developer DDU template (self-upload)
+    path(
+        "developer/ddu-template/",
+        DeveloperDDUTemplateView.as_view(),
+        name="developer-ddu-template",
+    ),
     # User documents
     path(
         "documents/all/",

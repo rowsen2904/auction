@@ -258,10 +258,28 @@ class BrokerInfoSerializer(serializers.ModelSerializer):
 
 class DeveloperInfoSerializer(serializers.ModelSerializer):
     inn_number = serializers.CharField(source="user.inn_number", read_only=True)
+    ddu_template_url = serializers.SerializerMethodField()
+    has_ddu_template = serializers.SerializerMethodField()
 
     class Meta:
         model = Developer
-        fields = ["company_name", "phone_number", "inn_number"]
+        fields = [
+            "company_name",
+            "phone_number",
+            "inn_number",
+            "ddu_template_url",
+            "has_ddu_template",
+        ]
+
+    def get_ddu_template_url(self, obj):
+        if not obj.ddu_template:
+            return None
+        request = self.context.get("request")
+        url = obj.ddu_template.url
+        return request.build_absolute_uri(url) if request else url
+
+    def get_has_ddu_template(self, obj):
+        return bool(obj.ddu_template)
 
 
 class MessageEmailResponseSerializer(serializers.Serializer):
@@ -528,6 +546,20 @@ class UserProfileUpdateSerializer(serializers.Serializer):
                 developer.save(update_fields=["company_name"])
 
         return user
+
+
+class DeveloperDDUTemplateUploadSerializer(
+    FileSizeValidationMixin, serializers.Serializer
+):
+    ddu_template = serializers.FileField(required=True)
+
+    def validate_ddu_template(self, file):
+        ext = (getattr(file, "name", "") or "").lower().rsplit(".", 1)[-1]
+        if ext != "pdf":
+            raise serializers.ValidationError(
+                _("Шаблон ДДУ должен быть в формате PDF.")
+            )
+        return self._validate_file_size(file, "ddu_template")
 
 
 class PasswordResetVerifySerializer(serializers.Serializer):

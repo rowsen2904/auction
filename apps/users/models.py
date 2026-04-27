@@ -23,6 +23,13 @@ def user_document_folder(instance, filename):
     return f"users/{user_id}/documents/{uuid4().hex}{ext}"
 
 
+def developer_ddu_template_folder(instance, filename):
+    _, ext = os.path.splitext(filename)
+    ext = ext.lower()
+    user_id = instance.user_id or "tmp"
+    return f"developers/{user_id}/ddu_template/{uuid4().hex}{ext}"
+
+
 # TODO must remove
 def broker_passport_folder():
     pass
@@ -246,6 +253,13 @@ class Developer(models.Model):
         max_length=20,
         blank=True,
         default="",
+    )
+
+    ddu_template = models.FileField(
+        _("Шаблон ДДУ"),
+        upload_to=developer_ddu_template_folder,
+        null=True,
+        blank=True,
     )
 
     class Meta:
