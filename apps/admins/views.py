@@ -8,6 +8,7 @@ from properties.filters import PendingPropertyFilter
 from properties.models import Property
 from rest_framework import generics, status
 from rest_framework.exceptions import ValidationError
+from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.permissions import IsAdminUser
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -191,6 +192,7 @@ class UserActiveUpdateView(generics.GenericAPIView):
 class AdminDeveloperCreateView(generics.GenericAPIView):
     permission_classes = [IsAdminUser]
     serializer_class = AdminDeveloperCreateSerializer
+    parser_classes = [MultiPartParser, FormParser, JSONParser]
 
     @admin_developer_create_schema
     def post(self, request, *args, **kwargs):
@@ -203,6 +205,7 @@ class AdminDeveloperCreateView(generics.GenericAPIView):
         phone_number = validated.get("phone_number", "") or ""
         inn_file = validated.get("inn")
         passport_file = validated.get("passport")
+        ddu_template_file = validated["ddu_template"]
 
         try:
             with transaction.atomic():
@@ -219,6 +222,7 @@ class AdminDeveloperCreateView(generics.GenericAPIView):
                     user=user,
                     company_name=validated["company_name"],
                     phone_number=phone_number,
+                    ddu_template=ddu_template_file,
                 )
 
                 if inn_file:
@@ -252,6 +256,7 @@ class AdminDeveloperCreateView(generics.GenericAPIView):
 class AdminDeveloperUpdateView(generics.GenericAPIView):
     permission_classes = [IsAdminUser]
     serializer_class = AdminDeveloperUpdateSerializer
+    parser_classes = [MultiPartParser, FormParser, JSONParser]
 
     def _get_developer_user(self, pk: int):
         return get_object_or_404(
@@ -268,6 +273,7 @@ class AdminDeveloperUpdateView(generics.GenericAPIView):
                 "developer__id",
                 "developer__company_name",
                 "developer__phone_number",
+                "developer__ddu_template",
             )
             .filter(role=User.Roles.DEVELOPER),
             pk=pk,
@@ -321,6 +327,13 @@ class AdminDeveloperUpdateView(generics.GenericAPIView):
                 ):
                     developer.phone_number = validated["phone_number"]
                     developer_fields.append("phone_number")
+
+                if "ddu_template" in validated:
+                    # delete old file if any
+                    if developer.ddu_template:
+                        developer.ddu_template.delete(save=False)
+                    developer.ddu_template = validated["ddu_template"]
+                    developer_fields.append("ddu_template")
 
                 if developer_fields:
                     developer.save(update_fields=developer_fields)

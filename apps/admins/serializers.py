@@ -122,6 +122,7 @@ class AdminDeveloperCreateSerializer(FileSizeValidationMixin, serializers.Serial
     )
     inn = serializers.FileField(required=False)
     passport = serializers.FileField(required=False)
+    ddu_template = serializers.FileField(required=True)
 
     def validate_email(self, value: str) -> str:
         email = value.strip().lower()
@@ -146,6 +147,14 @@ class AdminDeveloperCreateSerializer(FileSizeValidationMixin, serializers.Serial
     def validate_passport(self, file):
         return self._validate_file_size(file, "passport")
 
+    def validate_ddu_template(self, file):
+        ext = (getattr(file, "name", "") or "").lower().rsplit(".", 1)[-1]
+        if ext != "pdf":
+            raise serializers.ValidationError(
+                _("Шаблон ДДУ должен быть в формате PDF.")
+            )
+        return self._validate_file_size(file, "ddu_template")
+
     def validate(self, attrs):
         password = attrs.get("password")
         password_confirm = attrs.get("password_confirm")
@@ -163,7 +172,7 @@ class AdminDeveloperCreateSerializer(FileSizeValidationMixin, serializers.Serial
         return attrs
 
 
-class AdminDeveloperUpdateSerializer(serializers.Serializer):
+class AdminDeveloperUpdateSerializer(FileSizeValidationMixin, serializers.Serializer):
     email = serializers.EmailField(required=False)
     first_name = serializers.CharField(
         required=False,
@@ -186,6 +195,15 @@ class AdminDeveloperUpdateSerializer(serializers.Serializer):
     phone_number = serializers.CharField(
         required=False, allow_blank=True, max_length=20
     )
+    ddu_template = serializers.FileField(required=False)
+
+    def validate_ddu_template(self, file):
+        ext = (getattr(file, "name", "") or "").lower().rsplit(".", 1)[-1]
+        if ext != "pdf":
+            raise serializers.ValidationError(
+                _("Шаблон ДДУ должен быть в формате PDF.")
+            )
+        return self._validate_file_size(file, "ddu_template")
 
     def validate_email(self, value: str) -> str:
         email = value.strip().lower()
