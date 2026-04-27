@@ -121,18 +121,18 @@ def send_verification_email_to(email: str, ip_address: Optional[str] = None) -> 
     code = generate_code(code_len)
     cache_key = get_verification_key(email)
     cache.set(cache_key, code, expiry_seconds)
-    subject = "Email verification - MIG Tender"
+    subject = "Подтверждение email — MIG Tender"
     message = f"""
-Hello!
+Здравствуйте!
 
-Your verification code: {code}
+Ваш код подтверждения: {code}
 
-The code is valid for 15 minutes.
+Код действителен 15 минут.
 
-If you did not request this, simply ignore this email.
+Если вы не запрашивали это письмо, просто проигнорируйте его.
 
-With regards,
-The MIG Tender team
+С уважением,
+команда MIG Tender
 """.strip()
     send_mail(
         subject=subject,
@@ -207,19 +207,19 @@ def send_password_reset_email_to(
     expiry_seconds = getattr(settings, "EMAIL_VERIFICATION_CODE_EXPIRY", 15 * 60)
     code = generate_code(code_len)
     cache.set(get_password_reset_code_key(email), code, expiry_seconds)
-    subject = "Password reset - MIG Tender"
+    subject = "Восстановление пароля — MIG Tender"
     message = f"""
-Hello!
+Здравствуйте!
 
-Your password reset code: {code}
+Ваш код для восстановления пароля: {code}
 
-The code is valid for 15 minutes.
+Код действителен 15 минут.
 
-If you did not request a password reset, simply ignore this email —
-your current password will remain unchanged.
+Если вы не запрашивали восстановление пароля, просто проигнорируйте это
+письмо — ваш текущий пароль останется без изменений.
 
-With regards,
-The MIG Tender team
+С уважением,
+команда MIG Tender
 """.strip()
     send_mail(
         subject=subject,
