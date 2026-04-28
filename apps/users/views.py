@@ -1,7 +1,9 @@
+import jwt
 from deals.models import Deal
 from django.contrib.auth import get_user_model
 from django.db import IntegrityError, transaction
 from django.db.models import Q
+from django.http import FileResponse, Http404
 from django.utils.translation import gettext_lazy as _
 from drf_spectacular.utils import extend_schema
 from notifications.services import notify_new_broker_registered
@@ -12,6 +14,12 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
+from helpers.file_tokens import (
+    build_deal_document_url,
+    build_developer_template_url,
+    build_user_document_url,
+    verify_download_token,
+)
 from helpers.utils import get_client_ip
 
 from .models import Broker, UserDocument
@@ -379,9 +387,11 @@ class AllDocumentsView(APIView):
 
         # 1) Personal documents (UserDocument)
         for doc in UserDocument.objects.filter(user=user).order_by("-created_at"):
-            url = doc.document.url if doc.document else None
-            if url and request:
-                url = request.build_absolute_uri(url)
+            url = (
+                build_user_document_url(request, document_id=doc.id)
+                if doc.document
+                else None
+            )
             results.append(
                 {
                     "id": doc.id,
@@ -411,7 +421,7 @@ class AllDocumentsView(APIView):
             if deal.ddu_document:
                 fname = deal.ddu_document.name.rsplit("/", 1)[-1]
                 ext = f".{fname.rsplit('.', 1)[-1].lower()}" if "." in fname else ""
-                url = request.build_absolute_uri(deal.ddu_document.url)
+                url = build_deal_document_url(request, deal_id=deal.id, kind="ddu")
                 results.append(
                     {
                         "id": deal.id * 10000 + 1,  # unique synthetic id
@@ -431,7 +441,9 @@ class AllDocumentsView(APIView):
             if deal.payment_proof_document:
                 fname = deal.payment_proof_document.name.rsplit("/", 1)[-1]
                 ext = f".{fname.rsplit('.', 1)[-1].lower()}" if "." in fname else ""
-                url = request.build_absolute_uri(deal.payment_proof_document.url)
+                url = build_deal_document_url(
+                    request, deal_id=deal.id, kind="payment_proof"
+                )
                 results.append(
                     {
                         "id": deal.id * 10000 + 2,  # unique synthetic id
@@ -485,9 +497,11 @@ class DeveloperDDUTemplateView(generics.GenericAPIView):
         developer.ddu_template = new_file
         developer.save(update_fields=["ddu_template"])
 
-        url = developer.ddu_template.url if developer.ddu_template else None
-        if url and request:
-            url = request.build_absolute_uri(url)
+        url = (
+            build_developer_template_url(request, developer_user_id=user.id)
+            if developer.ddu_template
+            else None
+        )
 
         return Response(
             {
@@ -601,3 +615,178 @@ class ChangePasswordView(generics.GenericAPIView):
             {"message": _("Пароль успешно изменён.")},
             status=status.HTTP_200_OK,
         )
+
+
+# ----------------------------------------------------------------------
+# Auth-gated download endpoints
+#
+# All file URLs in API responses are emitted as `<base>/api/v1/files/...`
+# with a short-lived (10 min) signed JWT in `?t=<token>`. The endpoint
+# validates the token, re-checks permissions on the underlying object,
+# decrypts the payload via EncryptedFileSystemStorage, and streams it.
+# Direct /media/* URLs do not work — files on disk are ciphertext.
+# ----------------------------------------------------------------------
+
+
+def _streaming_response(file_field, filename: str | None = None) -> FileResponse:
+    """
+    Open `file_field` via its storage (transparently decrypts), and stream
+    it back as an attachment. Sets a stable Content-Type best-effort.
+    """
+    if not file_field:
+        raise Http404
+    fh = file_field.storage.open(file_field.name, "rb")
+    name = filename or fh.name.rsplit("/", 1)[-1]
+    return FileResponse(fh, as_attachment=True, filename=name)
+
+
+def _verify_or_404(request, *, kind: str, ref: str) -> int:
+    token = request.GET.get("t")
+    if not token:
+        raise Http404
+    try:
+        return verify_download_token(token, kind=kind, ref=ref)
+    except jwt.InvalidTokenError:
+        raise Http404
+
+
+class UserDocumentDownloadView(APIView):
+    """GET /api/v1/files/user-document/<id>/?t=<token>"""
+
+    permission_classes = [AllowAny]
+
+    def get(self, request, document_id: int):
+        uid = _verify_or_404(request, kind="user_doc", ref=str(document_id))
+        try:
+            doc = UserDocument.objects.select_related("user").get(id=document_id)
+        except UserDocument.DoesNotExist:
+            raise Http404
+        # Token's uid must own the document
+        if doc.user_id != uid:
+            raise Http404
+        return _streaming_response(doc.document, filename=doc.filename)
+
+
+class DealDocumentDownloadView(APIView):
+    """
+    GET /api/v1/files/deal/<deal_id>/<kind>/?t=<token>
+
+    kind in {"ddu", "payment_proof"}.
+    """
+
+    permission_classes = [AllowAny]
+
+    KIND_TO_FIELD = {
+        "ddu": "ddu_document",
+        "payment_proof": "payment_proof_document",
+    }
+
+    def get(self, request, deal_id: int, kind: str):
+        if kind not in self.KIND_TO_FIELD:
+            raise Http404
+        ref = f"deal:{deal_id}:{kind}"
+        uid = _verify_or_404(request, kind=f"deal_{kind}", ref=ref)
+        try:
+            deal = Deal.objects.select_related("broker", "developer").get(id=deal_id)
+        except Deal.DoesNotExist:
+            raise Http404
+        # Token's uid must be the broker, the developer or any admin
+        if uid not in (deal.broker_id, deal.developer_id):
+            try:
+                u = User.objects.only("id", "role", "is_staff").get(id=uid)
+            except User.DoesNotExist:
+                raise Http404
+            if not (u.is_staff or u.role == User.Roles.ADMIN):
+                raise Http404
+        field = getattr(deal, self.KIND_TO_FIELD[kind], None)
+        return _streaming_response(field)
+
+
+class DeveloperTemplateDownloadView(APIView):
+    """
+    GET /api/v1/files/developer/<developer_user_id>/ddu-template/?t=<token>
+
+    Allowed to: the developer themselves, any broker who has a deal with
+    that developer, and admins.
+    """
+
+    permission_classes = [AllowAny]
+
+    def get(self, request, developer_user_id: int):
+        ref = f"developer:{developer_user_id}"
+        uid = _verify_or_404(request, kind="developer_template", ref=ref)
+        try:
+            dev_user = User.objects.select_related("developer").get(
+                id=developer_user_id, role=User.Roles.DEVELOPER
+            )
+        except User.DoesNotExist:
+            raise Http404
+
+        # Permission re-check: dev itself, admin, or a broker with a deal w/ this dev
+        allowed = uid == dev_user.id
+        if not allowed:
+            try:
+                u = User.objects.only("id", "role", "is_staff").get(id=uid)
+            except User.DoesNotExist:
+                raise Http404
+            if u.is_staff or u.role == User.Roles.ADMIN:
+                allowed = True
+            elif u.role == User.Roles.BROKER:
+                allowed = Deal.objects.filter(broker_id=uid, developer_id=dev_user.id).exists()
+        if not allowed:
+            raise Http404
+
+        dev = getattr(dev_user, "developer", None)
+        if dev is None or not dev.ddu_template:
+            raise Http404
+        return _streaming_response(dev.ddu_template)
+
+
+class SettlementDocumentDownloadView(APIView):
+    """
+    GET /api/v1/files/settlement/<settlement_id>/<kind>/?t=<token>
+
+    kind in {"broker_payout_receipt", "developer_receipt"}.
+    Allowed: the deal's broker, the deal's developer, and admins.
+    """
+
+    permission_classes = [AllowAny]
+
+    KIND_TO_FIELD = {
+        "broker_payout_receipt": "broker_payout_receipt",
+        "developer_receipt": "developer_receipt",
+    }
+
+    def get(self, request, settlement_id: int, kind: str):
+        if kind not in self.KIND_TO_FIELD:
+            raise Http404
+        ref = f"settlement:{settlement_id}:{kind}"
+        uid = _verify_or_404(request, kind=f"settlement_{kind}", ref=ref)
+
+        from payments.models import DealSettlement
+
+        try:
+            settlement = (
+                DealSettlement.objects.select_related("deal__broker", "deal__developer")
+                .only(
+                    "id",
+                    "broker_payout_receipt",
+                    "developer_receipt",
+                    "deal__broker_id",
+                    "deal__developer_id",
+                )
+                .get(id=settlement_id)
+            )
+        except DealSettlement.DoesNotExist:
+            raise Http404
+
+        if uid not in (settlement.deal.broker_id, settlement.deal.developer_id):
+            try:
+                u = User.objects.only("id", "role", "is_staff").get(id=uid)
+            except User.DoesNotExist:
+                raise Http404
+            if not (u.is_staff or u.role == User.Roles.ADMIN):
+                raise Http404
+
+        field = getattr(settlement, self.KIND_TO_FIELD[kind], None)
+        return _streaming_response(field)

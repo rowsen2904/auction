@@ -33,6 +33,10 @@ class PaymentListSerializer(serializers.ModelSerializer):
     def get_receipt_document(self, obj):
         if not obj.receipt_document:
             return None
+        # Old "Payment" model — predates settlements/encryption refactor.
+        # Kept routed to direct media for backwards compat; in practice these
+        # files are also encrypted now and would need a dedicated download
+        # endpoint. Treat as deprecated.
         request = self.context.get("request")
         return (
             request.build_absolute_uri(obj.receipt_document.url)
@@ -130,17 +134,27 @@ class DealSettlementSerializer(serializers.ModelSerializer):
             return dev.company_name
         return full or u.email
 
-    def _abs(self, f):
-        if not f:
-            return None
-        req = self.context.get("request")
-        return req.build_absolute_uri(f.url) if req else f.url
-
     def get_broker_payout_receipt(self, obj):
-        return self._abs(obj.broker_payout_receipt)
+        if not obj.broker_payout_receipt:
+            return None
+        from helpers.file_tokens import build_settlement_document_url
+
+        return build_settlement_document_url(
+            self.context.get("request"),
+            settlement_id=obj.id,
+            kind="broker_payout_receipt",
+        )
 
     def get_developer_receipt(self, obj):
-        return self._abs(obj.developer_receipt)
+        if not obj.developer_receipt:
+            return None
+        from helpers.file_tokens import build_settlement_document_url
+
+        return build_settlement_document_url(
+            self.context.get("request"),
+            settlement_id=obj.id,
+            kind="developer_receipt",
+        )
 
 
 class SettlementSummarySerializer(serializers.Serializer):
