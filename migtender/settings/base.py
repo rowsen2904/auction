@@ -216,6 +216,49 @@ USE_TZ = True
 MEDIA_URL = "/media/"
 MEDIA_ROOT = os.getenv("MEDIA_ROOT", BASE_DIR / "media")
 
+# Encrypt all uploaded files at rest (envelope encryption, AES-256-GCM).
+# See helpers/encrypted_storage.py.
+STORAGES = {
+    "default": {
+        "BACKEND": "helpers.encrypted_storage.EncryptedFileSystemStorage",
+    },
+    "staticfiles": {
+        "BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage",
+    },
+}
+
+# Master key for file + field encryption.
+#
+# Resolution order (first wins):
+#   1. FILE_ENCRYPTION_KEY env var (preferred — managed by deploy system).
+#   2. <BASE_DIR>/.file_encryption_key file (auto-generated on first start).
+#
+# The bootstrap path lets a fresh deploy come up without any manual key
+# provisioning. After it runs once, the key is persisted to disk (mode 0600).
+# DO NOT commit the key file — it's in .gitignore. Loss of the key = loss
+# of all encrypted data; back it up via the same process you back up .env.
+FILE_ENCRYPTION_KEY = os.getenv("FILE_ENCRYPTION_KEY")
+if not FILE_ENCRYPTION_KEY:
+    _key_file = Path(BASE_DIR) / ".file_encryption_key"
+    if _key_file.exists():
+        FILE_ENCRYPTION_KEY = _key_file.read_text().strip()
+    else:
+        import base64
+        import secrets
+
+        FILE_ENCRYPTION_KEY = base64.urlsafe_b64encode(
+            secrets.token_bytes(32)
+        ).decode()
+        _key_file.write_text(FILE_ENCRYPTION_KEY)
+        try:
+            os.chmod(_key_file, 0o600)
+        except OSError:
+            pass
+
+# Short-lived signed-URL tokens for auth-gated downloads.
+DOWNLOAD_TOKEN_TTL_SECONDS = int(os.getenv("DOWNLOAD_TOKEN_TTL_SECONDS", "600"))
+DOWNLOAD_TOKEN_SIGNING_KEY = os.getenv("DOWNLOAD_TOKEN_SIGNING_KEY", "")
+
 # Static files
 STATIC_URL = "/static/"
 STATIC_ROOT = os.getenv("STATIC_ROOT", BASE_DIR / "staticfiles")

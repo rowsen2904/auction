@@ -12,6 +12,8 @@ from django.db.models import Q
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
+from helpers.encrypted_fields import EncryptedCharField
+
 from .validators import validate_inn
 
 
@@ -153,9 +155,9 @@ class Broker(models.Model):
 
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name="broker")
 
-    phone_number = models.CharField(
+    phone_number = EncryptedCharField(
         _("phone number"),
-        max_length=20,
+        max_length=128,
         blank=True,
         default="",
     )
@@ -248,9 +250,9 @@ class Developer(models.Model):
         max_length=55,
     )
 
-    phone_number = models.CharField(
+    phone_number = EncryptedCharField(
         _("phone number"),
-        max_length=20,
+        max_length=128,
         blank=True,
         default="",
     )

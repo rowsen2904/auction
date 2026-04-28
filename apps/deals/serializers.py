@@ -5,6 +5,11 @@ from decimal import Decimal
 from django.conf import settings
 from rest_framework import serializers
 
+from helpers.file_tokens import (
+    build_deal_document_url,
+    build_developer_template_url,
+)
+
 from .models import Deal, DealLog
 
 
@@ -96,21 +101,27 @@ class DealListSerializer(serializers.ModelSerializer):
     def get_has_payment_proof(self, obj):
         return bool(obj.payment_proof_document)
 
-    def _build_url(self, file_field):
-        if not file_field:
-            return None
-        request = self.context.get("request")
-        return request.build_absolute_uri(file_field.url) if request else file_field.url
-
     def get_ddu_document(self, obj):
-        return self._build_url(obj.ddu_document)
+        if not obj.ddu_document:
+            return None
+        return build_deal_document_url(
+            self.context.get("request"), deal_id=obj.id, kind="ddu"
+        )
 
     def get_payment_proof_document(self, obj):
-        return self._build_url(obj.payment_proof_document)
+        if not obj.payment_proof_document:
+            return None
+        return build_deal_document_url(
+            self.context.get("request"), deal_id=obj.id, kind="payment_proof"
+        )
 
     def get_developer_ddu_template_url(self, obj):
         dev = getattr(obj.developer, "developer", None)
-        return self._build_url(dev.ddu_template) if dev else None
+        if not dev or not dev.ddu_template:
+            return None
+        return build_developer_template_url(
+            self.context.get("request"), developer_user_id=obj.developer_id
+        )
 
     def get_broker_commission_amount(self, obj):
         rate = obj.real_property.commission_rate or Decimal("0.00")
@@ -157,17 +168,19 @@ class DealDetailSerializer(DealListSerializer):
             "logs",
         ]
 
-    def _build_url(self, file_field):
-        if not file_field:
-            return None
-        request = self.context.get("request")
-        return request.build_absolute_uri(file_field.url) if request else file_field.url
-
     def get_ddu_document(self, obj):
-        return self._build_url(obj.ddu_document)
+        if not obj.ddu_document:
+            return None
+        return build_deal_document_url(
+            self.context.get("request"), deal_id=obj.id, kind="ddu"
+        )
 
     def get_payment_proof_document(self, obj):
-        return self._build_url(obj.payment_proof_document)
+        if not obj.payment_proof_document:
+            return None
+        return build_deal_document_url(
+            self.context.get("request"), deal_id=obj.id, kind="payment_proof"
+        )
 
 
 class DDUUploadSerializer(serializers.Serializer):

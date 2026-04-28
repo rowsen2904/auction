@@ -11,6 +11,11 @@ from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from helpers.validators import FileSizeValidationMixin
 from migtender.settings import EMAIL_VERIFICATION_CODE_LENGTH
 
+from helpers.file_tokens import (
+    build_developer_template_url,
+    build_user_document_url,
+)
+
 from .models import Broker, Developer, UserDocument
 from .utils import (
     is_email_verified_for_password_reset,
@@ -63,8 +68,7 @@ class UserDocumentSerializer(serializers.ModelSerializer):
         if not obj.document:
             return None
         request = self.context.get("request")
-        url = obj.document.url
-        return request.build_absolute_uri(url) if request else url
+        return build_user_document_url(request, document_id=obj.id)
 
 
 class TokenUserSerializer(serializers.Serializer):
@@ -275,8 +279,7 @@ class DeveloperInfoSerializer(serializers.ModelSerializer):
         if not obj.ddu_template:
             return None
         request = self.context.get("request")
-        url = obj.ddu_template.url
-        return request.build_absolute_uri(url) if request else url
+        return build_developer_template_url(request, developer_user_id=obj.user_id)
 
     def get_has_ddu_template(self, obj):
         return bool(obj.ddu_template)
