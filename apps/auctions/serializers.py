@@ -137,6 +137,15 @@ class AuctionListSerializer(serializers.ModelSerializer):
             user and user.is_authenticated and getattr(user, "is_broker", False)
         )
 
+    def _is_past_end(self, obj: Auction) -> bool:
+        """
+        True iff the auction has reached its end_date. Drafts and other
+        states without a schedule are never considered past-end.
+        """
+        if obj.end_date is None:
+            return False
+        return timezone.now() >= obj.end_date
+
     def _hide_closed_summary_for_broker(self, obj: Auction, data: dict) -> None:
         if obj.mode != Auction.Mode.CLOSED:
             return
@@ -146,6 +155,40 @@ class AuctionListSerializer(serializers.ModelSerializer):
         data["min_price"] = None
         data["current_price"] = None
         data["bids_count"] = None
+
+    def _hide_sealed_winner_before_end(self, obj: Auction, data: dict) -> None:
+        """
+        Sealed-bid privacy: a broker (and any non-owner/non-admin viewer)
+        must not learn the winner of a CLOSED auction until end_date has
+        passed. winner_bid is technically null in the DB until
+        finish_auction runs, but we add this guard for safety in case
+        it gets set early or pre-populated through a different path.
+        """
+        if obj.mode != Auction.Mode.CLOSED:
+            return
+        if self._is_past_end(obj):
+            return
+
+        request = self.context.get("request")
+        user = getattr(request, "user", None)
+        is_admin = bool(
+            user
+            and getattr(user, "is_authenticated", False)
+            and (
+                getattr(user, "is_staff", False)
+                or getattr(user, "is_superuser", False)
+                or getattr(user, "is_admin", False)
+            )
+        )
+        is_owner = bool(
+            user
+            and getattr(user, "is_authenticated", False)
+            and obj.owner_id == user.id
+        )
+        if is_admin or is_owner:
+            return
+
+        data["winner_bid"] = None
 
     def _hide_prices_for_broker(self, obj: Auction, data: dict) -> None:
         # show_price_to_brokers may default to True; only hide when it is
@@ -169,6 +212,7 @@ class AuctionListSerializer(serializers.ModelSerializer):
         data = super().to_representation(instance)
         self._hide_closed_summary_for_broker(instance, data)
         self._hide_prices_for_broker(instance, data)
+        self._hide_sealed_winner_before_end(instance, data)
         return data
 
 
@@ -501,25 +545,60 @@ class AuctionDetailSerializer(AuctionListSerializer):
 
     def get_bids(self, obj: Auction):
         request = self.context.get("request")
+        user = getattr(request, "user", None)
 
         if obj.mode == Auction.Mode.OPEN:
+            # Open auctions are public — every participant sees the
+            # live bid history.
             qs = obj.bids.select_related("broker").order_by("-created_at")[:50]
             return BidSerializer(qs, many=True).data
 
-        user = getattr(request, "user", None)
-        if user and user.is_authenticated:
-            is_admin = bool(
-                getattr(user, "is_staff", False)
-                or getattr(user, "is_superuser", False)
-                or getattr(user, "is_admin", False)
-            )
-            if is_admin or obj.owner_id == user.id:
-                qs = obj.bids.select_related("broker").order_by(
-                    "-amount", "-created_at"
-                )
-                return BidSerializer(qs, many=True).data
+        # CLOSED — sealed-bid privacy rules.
+        is_authenticated = bool(user and getattr(user, "is_authenticated", False))
+        is_admin = is_authenticated and bool(
+            getattr(user, "is_staff", False)
+            or getattr(user, "is_superuser", False)
+            or getattr(user, "is_admin", False)
+        )
+        is_owner = is_authenticated and obj.owner_id == user.id
 
-        return []
+        if is_admin or is_owner:
+            qs = obj.bids.select_related("broker").order_by(
+                "-amount", "-created_at"
+            )
+            return BidSerializer(qs, many=True).data
+
+        is_broker = is_authenticated and bool(getattr(user, "is_broker", False))
+        if not is_broker:
+            return []
+
+        # Broker on a CLOSED auction:
+        #   - before end_date: nothing visible (sealed).
+        #   - after  end_date: own bid + winner bid (if any, deduplicated).
+        if not self._is_past_end(obj):
+            return []
+
+        visible_bid_ids: set[int] = set()
+        own_bid_id = (
+            obj.bids.filter(broker_id=user.id, is_sealed=True)
+            .order_by("-created_at")
+            .values_list("id", flat=True)
+            .first()
+        )
+        if own_bid_id is not None:
+            visible_bid_ids.add(own_bid_id)
+        if obj.winner_bid_id:
+            visible_bid_ids.add(obj.winner_bid_id)
+
+        if not visible_bid_ids:
+            return []
+
+        qs = (
+            obj.bids.filter(id__in=visible_bid_ids)
+            .select_related("broker")
+            .order_by("-amount", "-created_at")
+        )
+        return BidSerializer(qs, many=True).data
 
     def get_myBid(self, obj: Auction):
         request = self.context.get("request")
