@@ -11,6 +11,11 @@ app = Celery("migtender")
 app.config_from_object("django.conf:settings", namespace="CELERY")
 app.autodiscover_tasks()
 
+# `migtender` is the project package, not an installed app, so autodiscover
+# won't find migtender/tasks.py automatically. Import it here so its
+# @shared_task decorators register before the worker reads its task list.
+import migtender.tasks  # noqa: E402, F401
+
 app.conf.beat_schedule = {
     # Daily cleanup of executed one-off tasks from django-celery-beat tables
     "cleanup_beat_tasks_daily": {

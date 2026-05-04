@@ -898,7 +898,7 @@ def notify_broker_paid_out(*, settlement) -> None:
     create_notification(
         user=settlement.deal.broker,
         category=Notification.Category.PAYMENT,
-        event_type=NotificationEvent.PAYMENT_PAID,
+        event_type=NotificationEvent.PAYOUT_PAID,
         message=(
             f"Платформа выплатила вам {settlement.broker_amount} ₽ "
             f"по сделке #{settlement.deal_id}."
@@ -920,7 +920,7 @@ def notify_developer_receipt_uploaded(*, settlement) -> None:
         create_notification(
             user=admin,
             category=Notification.Category.PAYMENT,
-            event_type=NotificationEvent.PAYMENT_PAID,
+            event_type=NotificationEvent.PAYOUT_PAID,
             message=(
                 f"Девелопер загрузил чек по сделке #{settlement.deal_id}"
                 f" на сумму {settlement.total_from_developer} ₽ — "
@@ -938,7 +938,7 @@ def notify_developer_payment_received(*, settlement) -> None:
     create_notification(
         user=settlement.deal.developer,
         category=Notification.Category.PAYMENT,
-        event_type=NotificationEvent.PAYMENT_PAID,
+        event_type=NotificationEvent.PAYOUT_PAID,
         message=(
             f"Платформа подтвердила получение оплаты по сделке "
             f"#{settlement.deal_id}."
