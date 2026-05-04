@@ -122,7 +122,10 @@ class AdminDeveloperCreateSerializer(FileSizeValidationMixin, serializers.Serial
     )
     inn = serializers.FileField(required=False)
     passport = serializers.FileField(required=False)
-    ddu_template = serializers.FileField(required=True)
+    # DDU template is uploaded via a dedicated endpoint after creation —
+    # PUT /api/v1/auth/me/developer/ddu-template/. Keeping it accepted here
+    # for backward compatibility.
+    ddu_template = serializers.FileField(required=False)
 
     def validate_email(self, value: str) -> str:
         email = value.strip().lower()
@@ -148,6 +151,8 @@ class AdminDeveloperCreateSerializer(FileSizeValidationMixin, serializers.Serial
         return self._validate_file_size(file, "passport")
 
     def validate_ddu_template(self, file):
+        if file is None:
+            return file
         ext = (getattr(file, "name", "") or "").lower().rsplit(".", 1)[-1]
         if ext != "pdf":
             raise serializers.ValidationError(

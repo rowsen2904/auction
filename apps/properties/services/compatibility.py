@@ -73,6 +73,15 @@ def get_pool_match_fields(property_type: str) -> list[str]:
     return fields
 
 
+def _normalize_match_value(value):
+    # Treat None and "" as equivalent so that fields where one property
+    # has null and another has an empty string don't trigger a false
+    # mismatch.
+    if value is None:
+        return ""
+    return value
+
+
 def validate_lot_compatibility(properties: list[Property]) -> None:
     if len(properties) <= 1:
         return
@@ -86,7 +95,8 @@ def validate_lot_compatibility(properties: list[Property]) -> None:
         bad_fields = [
             field
             for field in match_fields
-            if getattr(prop, field) != getattr(reference, field)
+            if _normalize_match_value(getattr(prop, field))
+            != _normalize_match_value(getattr(reference, field))
         ]
         if bad_fields:
             mismatches.append(

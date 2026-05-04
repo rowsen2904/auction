@@ -1,5 +1,6 @@
 from auctions.models import Auction
 from django.utils.translation import gettext_lazy as _
+from helpers.file_tokens import build_property_image_url
 from rest_framework import serializers
 
 from .models import Property, PropertyImage
@@ -18,7 +19,7 @@ class PropertyImageSerializer(serializers.ModelSerializer):
         if not obj.image:
             return None
         request = self.context.get("request")
-        return request.build_absolute_uri(obj.image.url) if request else obj.image.url
+        return build_property_image_url(request, image_id=obj.id)
 
 
 class PropertyListSerializer(serializers.ModelSerializer):
@@ -47,6 +48,7 @@ class PropertyListSerializer(serializers.ModelSerializer):
             "area",
             "property_class",
             "price",
+            "show_price_to_brokers",
             "commission_rate",
             "deadline",
             "delivery_date",
@@ -62,6 +64,22 @@ class PropertyListSerializer(serializers.ModelSerializer):
             "moderation_rejection_reason",
             "is_editable",
         ]
+
+    def _is_broker_request(self) -> bool:
+        request = self.context.get("request")
+        user = getattr(request, "user", None)
+        return bool(
+            user and user.is_authenticated and getattr(user, "is_broker", False)
+        )
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        # Hide price from brokers when the developer marked the property
+        # as price-private. The flag also lives on the auction; the auction
+        # serializer applies its own redaction independently.
+        if instance.show_price_to_brokers is False and self._is_broker_request():
+            data["price"] = None
+        return data
 
     def get_is_editable(self, obj):
         open_auctions = getattr(obj, "prefetched_open_auctions", None)
@@ -109,7 +127,9 @@ class PropertyListSerializer(serializers.ModelSerializer):
 
 class PropertyCreateSerializer(serializers.ModelSerializer):
     property_class = serializers.ChoiceField(
-        choices=Property.PropertyClasses.choices,
+        # legacy `economy` is kept on the model for already-published rows
+        # but is hidden from the create/update form.
+        choices=Property.PROPERTY_CLASS_FORM_CHOICES,
         required=False,
         allow_null=True,
     )
@@ -154,6 +174,7 @@ class PropertyCreateSerializer(serializers.ModelSerializer):
             "area",
             "property_class",
             "price",
+            "show_price_to_brokers",
             "commission_rate",
             "deadline",
             "delivery_date",
@@ -204,7 +225,7 @@ class PropertyCreateSerializer(serializers.ModelSerializer):
 
 class PropertyUpdateSerializer(serializers.ModelSerializer):
     property_class = serializers.ChoiceField(
-        choices=Property.PropertyClasses.choices,
+        choices=Property.PROPERTY_CLASS_FORM_CHOICES,
         required=False,
         allow_null=True,
     )
@@ -266,6 +287,7 @@ class PropertyUpdateSerializer(serializers.ModelSerializer):
             "area",
             "property_class",
             "price",
+            "show_price_to_brokers",
             "commission_rate",
             "deadline",
             "delivery_date",

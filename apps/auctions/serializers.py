@@ -148,7 +148,9 @@ class AuctionListSerializer(serializers.ModelSerializer):
         data["bids_count"] = None
 
     def _hide_prices_for_broker(self, obj: Auction, data: dict) -> None:
-        if obj.show_price_to_brokers:
+        # show_price_to_brokers may default to True; only hide when it is
+        # explicitly False. None/missing → reveal.
+        if obj.show_price_to_brokers is not False:
             return
         if not self._is_broker_request():
             return
@@ -196,6 +198,14 @@ class AuctionCreateSerializer(serializers.ModelSerializer):
         allow_null=True,
     )
 
+    status = serializers.ChoiceField(
+        choices=[Auction.Status.DRAFT, Auction.Status.SCHEDULED],
+        required=False,
+        default=Auction.Status.SCHEDULED,
+    )
+    start_date = serializers.DateTimeField(required=False, allow_null=True)
+    end_date = serializers.DateTimeField(required=False, allow_null=True)
+
     class Meta:
         model = Auction
         fields = [
@@ -204,6 +214,7 @@ class AuctionCreateSerializer(serializers.ModelSerializer):
             "property_id",
             "property_ids",
             "mode",
+            "status",
             "min_price",
             "min_bid_increment",
             "show_price_to_brokers",
@@ -216,6 +227,8 @@ class AuctionCreateSerializer(serializers.ModelSerializer):
         end = attrs.get("end_date")
         mode = attrs.get("mode")
         min_bid_increment = attrs.get("min_bid_increment")
+        target_status = attrs.get("status", Auction.Status.SCHEDULED)
+        is_draft = target_status == Auction.Status.DRAFT
         now = timezone.now()
 
         min_offset = getattr(settings, "AUCTION_MIN_START_OFFSET", timedelta(hours=1))
@@ -259,38 +272,48 @@ class AuctionCreateSerializer(serializers.ModelSerializer):
 
         if property_ids is None:
             if single_property_id is None:
-                raise serializers.ValidationError(
-                    {
-                        "propertyIds": [
-                            "Передайте propertyIds для нового контракта "
-                            "или propertyId/property_id для обратной совместимости."
-                        ]
-                    }
-                )
-            property_ids = [single_property_id]
+                if is_draft:
+                    property_ids = []
+                else:
+                    raise serializers.ValidationError(
+                        {
+                            "propertyIds": [
+                                "Передайте propertyIds для нового контракта "
+                                "или propertyId/property_id для обратной совместимости."
+                            ]
+                        }
+                    )
+            else:
+                property_ids = [single_property_id]
 
         property_ids = list(dict.fromkeys(property_ids))
-        if not property_ids:
+        if not property_ids and not is_draft:
             raise serializers.ValidationError(
                 {"propertyIds": ["Нужно выбрать хотя бы один объект."]}
             )
 
-        if start and start < now + min_offset:
-            raise serializers.ValidationError(
-                {
-                    "start_date": [
-                        f"Дата начала должна быть не менее чем на {min_offset} "
-                        "от текущего момента."
-                    ]
-                }
-            )
-
-        if start and end and end <= start:
-            raise serializers.ValidationError(
-                {"end_date": ["Дата окончания должна быть больше даты начала."]}
-            )
-
-        if start and end:
+        if not is_draft:
+            if not start:
+                raise serializers.ValidationError(
+                    {"start_date": ["Дата начала обязательна."]}
+                )
+            if not end:
+                raise serializers.ValidationError(
+                    {"end_date": ["Дата окончания обязательна."]}
+                )
+            if start < now + min_offset:
+                raise serializers.ValidationError(
+                    {
+                        "start_date": [
+                            f"Дата начала должна быть не менее чем на {min_offset} "
+                            "от текущего момента."
+                        ]
+                    }
+                )
+            if end <= start:
+                raise serializers.ValidationError(
+                    {"end_date": ["Дата окончания должна быть больше даты начала."]}
+                )
             dur = end - start
             if dur < min_dur:
                 raise serializers.ValidationError(
@@ -300,27 +323,42 @@ class AuctionCreateSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError(
                     {"end_date": [f"Продолжительность должна быть не более {max_dur}."]}
                 )
+        else:
+            # Drafts: still validate ordering if both present.
+            if start and end and end <= start:
+                raise serializers.ValidationError(
+                    {"end_date": ["Дата окончания должна быть больше даты начала."]}
+                )
 
         if mode == Auction.Mode.OPEN:
-            if len(property_ids) != 1:
-                raise serializers.ValidationError(
-                    {
-                        "propertyIds": [
-                            "Для открытого аукциона нужно выбрать ровно один объект."
-                        ]
-                    }
-                )
+            if not is_draft:
+                if len(property_ids) != 1:
+                    raise serializers.ValidationError(
+                        {
+                            "propertyIds": [
+                                "Для открытого аукциона нужно выбрать ровно один объект."
+                            ]
+                        }
+                    )
 
-            if min_bid_increment is None:
-                raise serializers.ValidationError(
-                    {
-                        "min_bid_increment": [
-                            "Для открытого аукциона необходимо указать минимальный шаг ставки."
-                        ]
-                    }
-                )
+                if min_bid_increment is None:
+                    raise serializers.ValidationError(
+                        {
+                            "min_bid_increment": [
+                                "Для открытого аукциона необходимо указать минимальный шаг ставки."
+                            ]
+                        }
+                    )
 
-            if min_bid_increment < Decimal("1.00"):
+                if min_bid_increment < Decimal("1.00"):
+                    raise serializers.ValidationError(
+                        {
+                            "min_bid_increment": [
+                                "Минимальный шаг ставки должен быть не меньше 1."
+                            ]
+                        }
+                    )
+            elif min_bid_increment is not None and min_bid_increment < Decimal("1.00"):
                 raise serializers.ValidationError(
                     {
                         "min_bid_increment": [
@@ -338,97 +376,118 @@ class AuctionCreateSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         request = self.context["request"]
         property_ids = validated_data.pop("property_ids")
+        target_status = validated_data.get("status", Auction.Status.SCHEDULED)
+        is_draft = target_status == Auction.Status.DRAFT
 
         with transaction.atomic():
-            position_map = {
-                prop_id: index for index, prop_id in enumerate(property_ids)
-            }
+            properties: list[Property] = []
+            if property_ids:
+                position_map = {
+                    prop_id: index for index, prop_id in enumerate(property_ids)
+                }
 
-            properties = list(
-                Property.objects.select_for_update()
-                .filter(
-                    id__in=property_ids,
-                    owner=request.user,
-                    moderation_status=Property.ModerationStatuses.APPROVED,
-                    status=Property.PropertyStatuses.PUBLISHED,
-                )
-                .only(
-                    "id",
-                    "reference_id",
-                    "owner_id",
-                    "type",
-                    "project",
-                    "rooms",
-                    "purpose",
-                    "area",
-                    "property_class",
-                    "delivery_date",
-                    "price",
-                    "address",
-                )
-            )
+                # Drafts may include unpublished/pending properties — the
+                # author hasn't committed to schedule yet, so let them
+                # build the lot with whatever they own.
+                prop_filter = {
+                    "id__in": property_ids,
+                    "owner": request.user,
+                }
+                if not is_draft:
+                    prop_filter["moderation_status"] = (
+                        Property.ModerationStatuses.APPROVED
+                    )
+                    prop_filter["status"] = Property.PropertyStatuses.PUBLISHED
 
-            properties.sort(key=lambda prop: position_map[prop.id])
-
-            found_ids = {prop.id for prop in properties}
-            missing_ids = [
-                prop_id for prop_id in property_ids if prop_id not in found_ids
-            ]
-            if missing_ids:
-                raise serializers.ValidationError(
-                    {
-                        "propertyIds": [
-                            "Часть объектов не найдена, не принадлежит текущему девелоперу, "
-                            "не одобрена модерацией или не опубликована."
-                        ]
-                    }
+                properties = list(
+                    Property.objects.select_for_update()
+                    .filter(**prop_filter)
+                    .only(
+                        "id",
+                        "reference_id",
+                        "owner_id",
+                        "type",
+                        "project",
+                        "rooms",
+                        "purpose",
+                        "area",
+                        "property_class",
+                        "delivery_date",
+                        "price",
+                        "address",
+                    )
                 )
 
-            if validated_data["mode"] == Auction.Mode.CLOSED:
-                validate_lot_compatibility(properties)
+                properties.sort(key=lambda prop: position_map[prop.id])
 
-            busy_property_ids = set(
-                Property.objects.filter(id__in=property_ids)
-                .filter(
-                    Q(open_auctions__status__in=BLOCKING_AUCTION_STATUSES)
-                    | Q(lot_auctions__status__in=BLOCKING_AUCTION_STATUSES)
-                )
-                .values_list("id", flat=True)
-                .distinct()
-            )
-            if busy_property_ids:
-                raise serializers.ValidationError(
-                    {
-                        "propertyIds": [
-                            "Некоторые объекты уже связаны с аукционом: "
-                            f"{sorted(busy_property_ids)}"
-                        ]
-                    }
-                )
+                found_ids = {prop.id for prop in properties}
+                missing_ids = [
+                    prop_id for prop_id in property_ids if prop_id not in found_ids
+                ]
+                if missing_ids:
+                    raise serializers.ValidationError(
+                        {
+                            "propertyIds": [
+                                "Часть объектов не найдена, не принадлежит текущему девелоперу, "
+                                "не одобрена модерацией или не опубликована."
+                            ]
+                        }
+                    )
+
+                if validated_data["mode"] == Auction.Mode.CLOSED and not is_draft:
+                    validate_lot_compatibility(properties)
+
+                if not is_draft:
+                    busy_property_ids = set(
+                        Property.objects.filter(id__in=property_ids)
+                        .filter(
+                            Q(open_auctions__status__in=BLOCKING_AUCTION_STATUSES)
+                            | Q(lot_auctions__status__in=BLOCKING_AUCTION_STATUSES)
+                        )
+                        .values_list("id", flat=True)
+                        .distinct()
+                    )
+                    if busy_property_ids:
+                        raise serializers.ValidationError(
+                            {
+                                "propertyIds": [
+                                    "Некоторые объекты уже связаны с аукционом: "
+                                    f"{sorted(busy_property_ids)}"
+                                ]
+                            }
+                        )
 
             create_kwargs = {
                 "owner": request.user,
-                "status": Auction.Status.SCHEDULED,
                 **validated_data,
             }
+            create_kwargs.setdefault("status", Auction.Status.SCHEDULED)
 
             # важно: для OPEN real_property должен быть установлен до insert
-            if validated_data["mode"] == Auction.Mode.OPEN:
+            if (
+                validated_data["mode"] == Auction.Mode.OPEN
+                and properties
+            ):
                 create_kwargs["real_property"] = properties[0]
 
             auction = Auction.objects.create(**create_kwargs)
 
-            AuctionProperty.objects.bulk_create(
-                [AuctionProperty(auction=auction, property=prop) for prop in properties]
-            )
-
-            transaction.on_commit(
-                lambda: schedule_auction_status_tasks(
-                    auction_id=auction.id,
-                    start_date=auction.start_date,
-                    end_date=auction.end_date,
+            if properties:
+                AuctionProperty.objects.bulk_create(
+                    [
+                        AuctionProperty(auction=auction, property=prop)
+                        for prop in properties
+                    ]
                 )
-            )
+
+            if not is_draft:
+                transaction.on_commit(
+                    lambda: schedule_auction_status_tasks(
+                        auction_id=auction.id,
+                        start_date=auction.start_date,
+                        end_date=auction.end_date,
+                    )
+                )
 
         return auction
 

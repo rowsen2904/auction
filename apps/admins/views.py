@@ -4,7 +4,7 @@ from django.db.models import Prefetch
 from django.shortcuts import get_object_or_404
 from django.utils.translation import gettext_lazy as _
 from drf_spectacular.utils import extend_schema
-from properties.filters import PendingPropertyFilter
+from properties.filters import AdminPropertyFilter, PendingPropertyFilter
 from properties.models import Property
 from rest_framework import generics, status
 from rest_framework.exceptions import ValidationError
@@ -15,6 +15,10 @@ from rest_framework.views import APIView
 
 from apps.users.models import Developer, UserDocument
 from apps.users.serializers import TokenUserSerializer, UserProfileUpdateSerializer
+from notifications.services import (
+    notify_broker_verification_accepted,
+    notify_broker_verification_rejected,
+)
 
 from .filters import UserFilter
 from .paginations import UserListPagination
@@ -136,9 +140,17 @@ class BrokerVerificationView(generics.GenericAPIView):
             if action == "accept":
                 broker.verify_broker()
                 message = _("Брокер успешно верифицирован.")
+                transaction.on_commit(
+                    lambda: notify_broker_verification_accepted(broker_user=user)
+                )
             else:
                 broker.set_as_rejected(reason=reason)
                 message = _("Брокеру было отказано.")
+                transaction.on_commit(
+                    lambda: notify_broker_verification_rejected(
+                        broker_user=user, reason=reason
+                    )
+                )
 
         return Response(
             {
@@ -205,7 +217,7 @@ class AdminDeveloperCreateView(generics.GenericAPIView):
         phone_number = validated.get("phone_number", "") or ""
         inn_file = validated.get("inn")
         passport_file = validated.get("passport")
-        ddu_template_file = validated["ddu_template"]
+        ddu_template_file = validated.get("ddu_template")
 
         try:
             with transaction.atomic():
@@ -218,12 +230,14 @@ class AdminDeveloperCreateView(generics.GenericAPIView):
                     is_active=True,
                     inn_number=inn_number,
                 )
-                Developer.objects.create(
-                    user=user,
-                    company_name=validated["company_name"],
-                    phone_number=phone_number,
-                    ddu_template=ddu_template_file,
-                )
+                developer_kwargs = {
+                    "user": user,
+                    "company_name": validated["company_name"],
+                    "phone_number": phone_number,
+                }
+                if ddu_template_file is not None:
+                    developer_kwargs["ddu_template"] = ddu_template_file
+                Developer.objects.create(**developer_kwargs)
 
                 if inn_file:
                     UserDocument.objects.create(
@@ -422,6 +436,26 @@ class PendingPropertiesListView(generics.ListAPIView):
     @pending_properties_list_schema
     def get(self, request, *args, **kwargs):
         return super().get(request, *args, **kwargs)
+
+
+class AdminPropertiesListView(generics.ListAPIView):
+    """
+    GET /admin/properties/?moderation_status=pending|approved|rejected
+
+    Generic admin view of all properties with full filter support. Excludes
+    drafts (those are visible only to their owner).
+    """
+
+    permission_classes = [IsAdminUser]
+    serializer_class = PendingPropertySerializer
+    filterset_class = AdminPropertyFilter
+
+    def get_queryset(self):
+        return (
+            Property.objects.select_related("owner")
+            .exclude(status=Property.PropertyStatuses.DRAFT)
+            .order_by("-created_at")
+        )
 
 
 class ApprovePropertyView(APIView):

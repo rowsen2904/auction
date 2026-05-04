@@ -27,14 +27,29 @@ class Property(models.Model):
         LAND = "land", _("Land")
 
     class PropertyClasses(models.TextChoices):
+        # economy is kept as a legacy value for already-published rows,
+        # but is intentionally excluded from FormChoices below so that
+        # new properties can only be created with one of the active
+        # classes.
         ECONOMY = "economy", _("Economy")
         COMFORT = "comfort", _("Comfort")
         BUSINESS = "business", _("Business")
         PREMIUM = "premium", _("Premium")
+        ELITE = "elite", _("Elite")
+
+    # Choices exposed on the create/update form.
+    PROPERTY_CLASS_FORM_CHOICES = [
+        (PropertyClasses.COMFORT, _("Comfort")),
+        (PropertyClasses.BUSINESS, _("Business")),
+        (PropertyClasses.PREMIUM, _("Premium")),
+        (PropertyClasses.ELITE, _("Elite")),
+    ]
 
     class CommercialSubtypes(models.TextChoices):
         RETAIL = "retail", _("Retail")
         OFFICE = "office", _("Office")
+        WAREHOUSE = "warehouse", _("Warehouse")
+        OTHER = "other", _("Other")
 
     class PropertyStatuses(models.TextChoices):
         DRAFT = "draft", _("Draft")
@@ -177,6 +192,11 @@ class Property(models.Model):
         max_length=50,
         blank=True,
         default="",
+    )
+
+    show_price_to_brokers = models.BooleanField(
+        _("Показывать прайсовую цену брокерам"),
+        default=True,
     )
 
     status = models.CharField(

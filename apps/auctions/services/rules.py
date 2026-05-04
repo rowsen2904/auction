@@ -101,7 +101,16 @@ def ensure_not_current_leader(*, auction: Auction, user_id: int) -> None:
 
 
 def ensure_can_cancel(*, auction: Auction, user) -> None:
+    if auction.status != Auction.Status.SCHEDULED:
+        raise ValidationError(
+            {"detail": "Отменить можно только запланированный аукцион."}
+        )
+
     now = timezone.now()
+
+    if auction.start_date is None:
+        # Drafts (no dates yet) can be cancelled at any time by their owner.
+        return
 
     if now >= auction.start_date:
         raise ValidationError(

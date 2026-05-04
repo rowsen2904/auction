@@ -19,6 +19,7 @@ from helpers.file_tokens import (
     build_developer_template_url,
     build_user_document_url,
     verify_download_token,
+    verify_public_download_token,
 )
 from helpers.utils import get_client_ip
 
@@ -57,6 +58,7 @@ from .utils import (
     clear_email_verified_for_password_reset,
     clear_email_verified_for_registration,
     email_rate_limiter,
+    login_attempt_limiter,
     mark_email_verified_for_password_reset,
     mark_email_verified_for_registration,
     send_password_reset_email_to,
@@ -71,7 +73,33 @@ class LoginView(TokenObtainPairView):
 
     @login_schema
     def post(self, request, *args, **kwargs):
-        return super().post(request, *args, **kwargs)
+        ip_address = get_client_ip(request)
+        email = (request.data.get("email") or "").strip().lower()
+
+        rate_limit_result = login_attempt_limiter.check(ip_address, email)
+        if not rate_limit_result.allowed:
+            return Response(
+                {
+                    "error": rate_limit_result.message,
+                    "remaining_time": rate_limit_result.remaining_time,
+                    "code": "login_locked",
+                },
+                status=status.HTTP_429_TOO_MANY_REQUESTS,
+                headers={"Retry-After": str(rate_limit_result.remaining_time)},
+            )
+
+        try:
+            response = super().post(request, *args, **kwargs)
+        except Exception:
+            login_attempt_limiter.record_failure(ip_address, email)
+            raise
+
+        if 200 <= response.status_code < 300:
+            login_attempt_limiter.reset(ip_address, email)
+        else:
+            login_attempt_limiter.record_failure(ip_address, email)
+
+        return response
 
 
 class CustomTokenRefreshView(TokenRefreshView):
@@ -740,6 +768,93 @@ class DeveloperTemplateDownloadView(APIView):
         if dev is None or not dev.ddu_template:
             raise Http404
         return _streaming_response(dev.ddu_template)
+
+
+class PropertyImageDownloadView(APIView):
+    """
+    GET /api/v1/files/property-image/<image_id>/?t=<token>
+
+    Public — property images are visible in the catalog. Files are
+    encrypted on disk so the only way to fetch them is through this view.
+    """
+
+    permission_classes = [AllowAny]
+
+    def get(self, request, image_id: int):
+        from properties.models import PropertyImage
+
+        token = request.GET.get("t")
+        if not token:
+            raise Http404
+        try:
+            verify_public_download_token(
+                token, kind="property_image", ref=str(image_id)
+            )
+        except jwt.InvalidTokenError:
+            raise Http404
+
+        try:
+            image = PropertyImage.objects.only("id", "image").get(id=image_id)
+        except PropertyImage.DoesNotExist:
+            raise Http404
+        if not image.image:
+            raise Http404
+
+        fh = image.image.storage.open(image.image.name, "rb")
+        name = fh.name.rsplit("/", 1)[-1]
+        return FileResponse(fh, as_attachment=False, filename=name)
+
+
+class DocumentRequestFileDownloadView(APIView):
+    """
+    GET /api/v1/files/document-request/<file_id>/?t=<token>
+
+    Authorized: the auction owner, the broker who answered the request,
+    the admin, or the user who originally requested the documents.
+    """
+
+    permission_classes = [AllowAny]
+
+    def get(self, request, file_id: int):
+        from auctions.models import DocumentRequestFile
+
+        uid = _verify_or_404(
+            request, kind="document_request_file", ref=str(file_id)
+        )
+        try:
+            doc = (
+                DocumentRequestFile.objects.select_related(
+                    "request",
+                    "request__auction",
+                    "request__broker",
+                    "request__requested_by",
+                )
+                .only(
+                    "id",
+                    "file",
+                    "request__auction__owner_id",
+                    "request__broker_id",
+                    "request__requested_by_id",
+                )
+                .get(id=file_id)
+            )
+        except DocumentRequestFile.DoesNotExist:
+            raise Http404
+
+        allowed_uids = {
+            doc.request.auction.owner_id,
+            doc.request.broker_id,
+            doc.request.requested_by_id,
+        }
+        if uid not in allowed_uids:
+            try:
+                u = User.objects.only("id", "role", "is_staff").get(id=uid)
+            except User.DoesNotExist:
+                raise Http404
+            if not (u.is_staff or u.role == User.Roles.ADMIN):
+                raise Http404
+
+        return _streaming_response(doc.file)
 
 
 class SettlementDocumentDownloadView(APIView):

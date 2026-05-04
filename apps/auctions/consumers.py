@@ -10,7 +10,7 @@ from rest_framework.exceptions import PermissionDenied, ValidationError
 
 from .models import Auction, Bid
 from .participants import add_participant_with_flag, list_participants
-from .realtime import sealed_bids_group_name
+from .realtime import AUCTIONS_GLOBAL_GROUP, sealed_bids_group_name
 from .serializers import BidSerializer
 from .services.rules import (
     ctx_for,
@@ -415,3 +415,31 @@ class ClosedAuctionBidsConsumer(AsyncJsonWebsocketConsumer):
 
     async def auction_updated(self, event):
         await self.send_json({"type": "auction_updated", **event["payload"]})
+
+
+class AuctionsGlobalConsumer(AsyncJsonWebsocketConsumer):
+    """
+    Read-only firehose for auction status changes across the platform.
+    Catalog/list pages subscribe to receive `auction_status_changed`
+    events for any auction without having to know its id ahead of time.
+    """
+
+    async def connect(self):
+        await self.channel_layer.group_add(AUCTIONS_GLOBAL_GROUP, self.channel_name)
+        await self.accept()
+
+    async def disconnect(self, code):
+        await self.channel_layer.group_discard(
+            AUCTIONS_GLOBAL_GROUP, self.channel_name
+        )
+
+    async def receive_json(self, content, **kwargs):
+        # Read-only channel.
+        await self.send_json(
+            {"type": "error", "detail": "Read-only channel."}
+        )
+
+    async def auction_status_changed(self, event):
+        await self.send_json(
+            {"type": "auction_status_changed", **event["payload"]}
+        )

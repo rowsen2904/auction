@@ -3,6 +3,7 @@ from django.urls import path
 from .views import (
     AdminDeveloperCreateView,
     AdminDeveloperUpdateView,
+    AdminPropertiesListView,
     AdminUserUpdateView,
     ApprovePropertyView,
     BrokerVerificationView,
@@ -42,6 +43,11 @@ urlpatterns = [
         name="broker-verification",
     ),
     # Properties
+    path(
+        "properties/",
+        AdminPropertiesListView.as_view(),
+        name="admin-properties-list",
+    ),
     path(
         "properties/pending/",
         PendingPropertiesListView.as_view(),

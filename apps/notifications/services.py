@@ -52,6 +52,9 @@ class NotificationEvent:
     DAILY_DEALS_SUMMARY = "daily_deals_summary"
     DAILY_PAYMENTS_SUMMARY = "daily_payments_summary"
 
+    BROKER_VERIFICATION_ACCEPTED = "broker_verification_accepted"
+    BROKER_VERIFICATION_REJECTED = "broker_verification_rejected"
+
 
 def _display_user(user) -> str:
     if not user:
@@ -179,6 +182,27 @@ def mark_all_notifications_as_read(*, user) -> list[int]:
 
     transaction.on_commit(_after_commit)
     return notification_ids
+
+
+def notify_broker_verification_accepted(*, broker_user) -> None:
+    create_notification(
+        user=broker_user,
+        category=Notification.Category.USER,
+        event_type=NotificationEvent.BROKER_VERIFICATION_ACCEPTED,
+        message="Ваш аккаунт брокера верифицирован. Можете участвовать в аукционах",
+        data={"broker_user_id": broker_user.id},
+        dedupe_key=f"notif:broker_verification_accepted:{broker_user.id}",
+    )
+
+
+def notify_broker_verification_rejected(*, broker_user, reason: str) -> None:
+    create_notification(
+        user=broker_user,
+        category=Notification.Category.USER,
+        event_type=NotificationEvent.BROKER_VERIFICATION_REJECTED,
+        message=f"Ваша заявка на верификацию отклонена. Причина: {reason}",
+        data={"broker_user_id": broker_user.id, "reason": reason},
+    )
 
 
 def notify_new_broker_registered(*, broker_user) -> None:

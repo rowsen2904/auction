@@ -13,6 +13,13 @@ class DealFilter(django_filters.FilterSet):
     broker_id = django_filters.NumberFilter(field_name="broker_id")
     developer_id = django_filters.NumberFilter(field_name="developer_id")
 
+    date_from = django_filters.IsoDateTimeFilter(
+        field_name="created_at", lookup_expr="gte"
+    )
+    date_to = django_filters.IsoDateTimeFilter(
+        field_name="created_at", lookup_expr="lte"
+    )
+
     class Meta:
         model = Deal
         fields = [
@@ -22,4 +29,6 @@ class DealFilter(django_filters.FilterSet):
             "real_property_id",
             "broker_id",
             "developer_id",
+            "date_from",
+            "date_to",
         ]

@@ -72,3 +72,19 @@ class MyPropertyFilter(BasePropertyFilter):
 
 class PendingPropertyFilter(BasePropertyFilter):
     pass
+
+
+class AdminPropertyFilter(BasePropertyFilter):
+    moderation_status = filters.ChoiceFilter(
+        field_name="moderation_status",
+        choices=Property.ModerationStatuses.choices,
+    )
+    status = filters.CharFilter(field_name="status")
+    owner_id = filters.NumberFilter(field_name="owner_id")
+
+    class Meta(BasePropertyFilter.Meta):
+        fields = BasePropertyFilter.Meta.fields + [
+            "moderation_status",
+            "status",
+            "owner_id",
+        ]

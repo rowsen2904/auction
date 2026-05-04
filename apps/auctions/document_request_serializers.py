@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from helpers.file_tokens import build_document_request_file_url
 from rest_framework import serializers
 
 from .models import DocumentRequest, DocumentRequestFile
@@ -16,7 +17,7 @@ class DocumentRequestFileSerializer(serializers.ModelSerializer):
         if not obj.file:
             return None
         request = self.context.get("request")
-        return request.build_absolute_uri(obj.file.url) if request else obj.file.url
+        return build_document_request_file_url(request, file_id=obj.id)
 
 
 class DocumentRequestSerializer(serializers.ModelSerializer):

@@ -102,6 +102,85 @@ class EmailRateLimiter:
 email_rate_limiter = EmailRateLimiter()
 
 
+class LoginAttemptLimiter:
+    """
+    Tracks failed login attempts per IP and per email. After
+    `MAX_ATTEMPTS` failures within `WINDOW_SECONDS` either dimension is
+    locked out for `WINDOW_SECONDS` (sliding window — every new failure
+    resets the TTL on its key).
+    """
+
+    PREFIX = "login_attempt"
+    MAX_ATTEMPTS = 5
+    WINDOW_SECONDS = 15 * 60
+
+    def _ip_key(self, ip_address: str) -> str:
+        return f"{self.PREFIX}:ip:{ip_address}"
+
+    def _email_key(self, email: str) -> str:
+        return f"{self.PREFIX}:email:{email.strip().lower()}"
+
+    def check(
+        self, ip_address: Optional[str], email: Optional[str]
+    ) -> RateLimitResult:
+        try:
+            for key in self._keys(ip_address, email):
+                data = cache.get(key)
+                if data and data.get("count", 0) >= self.MAX_ATTEMPTS:
+                    locked_until = int(data.get("locked_until", 0))
+                    remaining = max(
+                        0, locked_until - int(timezone.now().timestamp())
+                    )
+                    return RateLimitResult(
+                        allowed=False,
+                        remaining_time=remaining,
+                        message=(
+                            "Слишком много неудачных попыток входа. "
+                            f"Попробуйте через {remaining} секунд."
+                        ),
+                    )
+            return RateLimitResult(allowed=True)
+        except Exception as e:
+            logger.error(f"Login rate limit check failed: {e}")
+            return RateLimitResult(allowed=True)
+
+    def record_failure(
+        self, ip_address: Optional[str], email: Optional[str]
+    ) -> None:
+        try:
+            now_ts = int(timezone.now().timestamp())
+            for key in self._keys(ip_address, email):
+                data = cache.get(key) or {"count": 0, "locked_until": 0}
+                data["count"] = int(data.get("count", 0)) + 1
+                if data["count"] >= self.MAX_ATTEMPTS:
+                    data["locked_until"] = now_ts + self.WINDOW_SECONDS
+                cache.set(key, data, self.WINDOW_SECONDS)
+        except Exception as e:
+            logger.error(f"Login rate limit record failed: {e}")
+
+    def reset(
+        self, ip_address: Optional[str], email: Optional[str]
+    ) -> None:
+        try:
+            for key in self._keys(ip_address, email):
+                cache.delete(key)
+        except Exception as e:
+            logger.error(f"Login rate limit reset failed: {e}")
+
+    def _keys(
+        self, ip_address: Optional[str], email: Optional[str]
+    ) -> list[str]:
+        keys = []
+        if ip_address:
+            keys.append(self._ip_key(ip_address))
+        if email:
+            keys.append(self._email_key(email))
+        return keys
+
+
+login_attempt_limiter = LoginAttemptLimiter()
+
+
 def norm_email(email: str) -> str:
     return email.strip().lower()
 

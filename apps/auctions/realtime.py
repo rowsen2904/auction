@@ -4,6 +4,9 @@ from asgiref.sync import async_to_sync
 from channels.layers import get_channel_layer
 
 
+AUCTIONS_GLOBAL_GROUP = "auctions_global"
+
+
 def auction_group_name(auction_id: int) -> str:
     return f"auction_{auction_id}"
 
@@ -73,6 +76,14 @@ def broadcast_auction_status(*, auction_id: int, payload: dict) -> None:
     async_to_sync(channel_layer.group_send)(
         sealed_bids_group_name(auction_id),
         {"type": "auction_updated", "payload": payload},
+    )
+
+    # Global broadcast — list/catalog pages subscribe to this group to
+    # receive status flips (scheduled→active, active→finished, etc.) for
+    # any auction without having to subscribe per-auction.
+    async_to_sync(channel_layer.group_send)(
+        AUCTIONS_GLOBAL_GROUP,
+        {"type": "auction_status_changed", "payload": payload},
     )
 
 

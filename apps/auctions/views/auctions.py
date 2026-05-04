@@ -43,6 +43,27 @@ def _auction_base_queryset():
     )
 
 
+def _hide_drafts_from_strangers(qs, user):
+    """
+    Drafts are private to their owner and to admins. Anyone else asking
+    the public/broker views should not see them.
+    """
+    from django.db.models import Q
+
+    if not user or not getattr(user, "is_authenticated", False):
+        return qs.exclude(status=Auction.Status.DRAFT)
+    is_admin = bool(
+        getattr(user, "is_staff", False)
+        or getattr(user, "is_superuser", False)
+        or getattr(user, "is_admin", False)
+    )
+    if is_admin:
+        return qs
+    return qs.filter(
+        ~Q(status=Auction.Status.DRAFT) | Q(owner=user)
+    )
+
+
 class MyAuctionListView(generics.ListAPIView):
     pagination_class = AuctionPagination
     serializer_class = AuctionListSerializer
@@ -87,6 +108,7 @@ class BrokerParticipatedAuctionsView(generics.ListAPIView):
         return (
             _auction_base_queryset()
             .filter(bids__broker=self.request.user)
+            .exclude(status=Auction.Status.DRAFT)
             .distinct()
         )
 
@@ -114,7 +136,9 @@ class AuctionListCreateView(generics.ListCreateAPIView):
         return [AllowAny()]
 
     def get_queryset(self):
-        return _auction_base_queryset()
+        return _hide_drafts_from_strangers(
+            _auction_base_queryset(), getattr(self.request, "user", None)
+        )
 
     def get_serializer_class(self):
         if self.request.method == "POST":
@@ -156,6 +180,7 @@ class ActiveAuctionListCreateView(generics.ListAPIView):
         return [AllowAny()]
 
     def get_queryset(self):
+        # ACTIVE-only — never includes drafts by definition.
         return _auction_base_queryset().filter(status=Auction.Status.ACTIVE)
 
     def get_serializer_class(self):
@@ -171,7 +196,9 @@ class AuctionDetailView(generics.RetrieveAPIView):
     permission_classes = [AllowAny]
 
     def get_queryset(self):
-        return _auction_base_queryset()
+        return _hide_drafts_from_strangers(
+            _auction_base_queryset(), getattr(self.request, "user", None)
+        )
 
     @auction_detail_schema
     def get(self, request, *args, **kwargs):

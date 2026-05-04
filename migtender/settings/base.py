@@ -170,9 +170,25 @@ REST_FRAMEWORK = {
 
 
 # Simple JWT Settings
+#
+# Tokens:
+#   - access  : 60 min — short enough to limit damage from leaks, long
+#               enough to avoid /refresh storms.
+#   - refresh : 7 days — keeps users logged in across normal sessions.
+#
+# Rotation is disabled. Without rotation the same refresh token is valid
+# for the full 7 days, so concurrent /refresh calls (e.g. multiple tabs
+# refreshing at once) cannot race each other into a forced logout.
+# If you want to enable rotation later, ALSO set BLACKLIST_AFTER_ROTATION
+# = True and add 'rest_framework_simplejwt.token_blacklist' to
+# INSTALLED_APPS — otherwise rotation alone would still race.
 SIMPLE_JWT = {
     "ACCESS_TOKEN_LIFETIME": timedelta(minutes=60),
     "REFRESH_TOKEN_LIFETIME": timedelta(days=7),
+    "ROTATE_REFRESH_TOKENS": False,
+    "BLACKLIST_AFTER_ROTATION": False,
+    "ALGORITHM": "HS256",
+    "AUTH_HEADER_TYPES": ("Bearer",),
 }
 
 

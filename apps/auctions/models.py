@@ -18,6 +18,7 @@ class Auction(models.Model):
         CLOSED = "closed", "Closed"
 
     class Status(models.TextChoices):
+        DRAFT = "draft", "Draft"
         SCHEDULED = "scheduled", "Scheduled"
         ACTIVE = "active", "Active"
         FINISHED = "finished", "Finished"
@@ -64,8 +65,10 @@ class Auction(models.Model):
         db_index=True,
     )
 
-    start_date = models.DateTimeField(db_index=True)
-    end_date = models.DateTimeField(db_index=True)
+    # Nullable: drafts can be created without dates and dates are filled
+    # in once the developer is ready to schedule.
+    start_date = models.DateTimeField(db_index=True, null=True, blank=True)
+    end_date = models.DateTimeField(db_index=True, null=True, blank=True)
 
     status = models.CharField(
         max_length=12,
@@ -150,8 +153,14 @@ class Auction(models.Model):
             ),
         ]
         constraints = [
+            # Drafts may have either field null; only enforce the
+            # ordering when both are present.
             models.CheckConstraint(
-                check=Q(end_date__gt=models.F("start_date")),
+                check=(
+                    Q(start_date__isnull=True)
+                    | Q(end_date__isnull=True)
+                    | Q(end_date__gt=models.F("start_date"))
+                ),
                 name="auc_end_gt_start",
             ),
             models.CheckConstraint(
@@ -160,7 +169,8 @@ class Auction(models.Model):
             ),
             models.CheckConstraint(
                 check=(
-                    (
+                    Q(status="draft")
+                    | (
                         Q(mode="open")
                         & Q(min_bid_increment__isnull=False)
                         & Q(min_bid_increment__gte=Decimal("1.00"))
@@ -194,6 +204,11 @@ class Auction(models.Model):
 
     def clean(self):
         super().clean()
+
+        # Drafts are intentionally permissive — required fields are only
+        # enforced when the developer transitions out of draft.
+        if self.status == self.Status.DRAFT:
+            return
 
         if self.mode == self.Mode.OPEN:
             if self.min_bid_increment is None:

@@ -9,6 +9,8 @@ from django.urls import path
 from .views import (
     DealDocumentDownloadView,
     DeveloperTemplateDownloadView,
+    DocumentRequestFileDownloadView,
+    PropertyImageDownloadView,
     SettlementDocumentDownloadView,
     UserDocumentDownloadView,
 )
@@ -33,5 +35,15 @@ urlpatterns = [
         "settlement/<int:settlement_id>/<str:kind>/",
         SettlementDocumentDownloadView.as_view(),
         name="file-settlement-document",
+    ),
+    path(
+        "property-image/<int:image_id>/",
+        PropertyImageDownloadView.as_view(),
+        name="file-property-image",
+    ),
+    path(
+        "document-request/<int:file_id>/",
+        DocumentRequestFileDownloadView.as_view(),
+        name="file-document-request",
     ),
 ]
