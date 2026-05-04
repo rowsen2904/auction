@@ -17,8 +17,8 @@ def check_broker_payout_deadlines(self) -> dict:
     Ежедневно бежит по не оплаченным брокеру расчётам, у которых дедлайн
     либо близок (< 24h), либо просрочен, и шлёт админам уведомление.
     """
-    from notifications.models import Notification, NotificationEvent
-    from notifications.services import create_notification
+    from notifications.models import Notification
+    from notifications.services import NotificationEvent, create_notification
 
     from .models import DealSettlement
 
@@ -45,7 +45,7 @@ def check_broker_payout_deadlines(self) -> dict:
             create_notification(
                 user=admin,
                 category=Notification.Category.PAYMENT,
-                event_type=NotificationEvent.PAYMENT_PAID,
+                event_type=NotificationEvent.PAYOUT_PAID,
                 message=msg,
                 data={
                     "settlement_id": s.id,
@@ -73,8 +73,8 @@ def check_developer_payment_deadlines(self) -> dict:
 
     Напоминаем за 30/7/1 день до дедлайна + при просрочке.
     """
-    from notifications.models import Notification, NotificationEvent
-    from notifications.services import create_notification
+    from notifications.models import Notification
+    from notifications.services import NotificationEvent, create_notification
 
     from .models import DealSettlement
 
@@ -118,7 +118,7 @@ def check_developer_payment_deadlines(self) -> dict:
         create_notification(
             user=s.deal.developer,
             category=Notification.Category.PAYMENT,
-            event_type=NotificationEvent.PAYMENT_PAID,
+            event_type=NotificationEvent.PAYOUT_PAID,
             message=msg,
             data={
                 "settlement_id": s.id,
