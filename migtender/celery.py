@@ -22,6 +22,13 @@ app.conf.beat_schedule = {
         "task": "migtender.tasks.cleanup_beat_tasks",
         "schedule": crontab(hour=3, minute=0),  # every day at 03:00
     },
+    # Fallback sweeper: catches auctions whose end_date passed but the
+    # one-off `finish_auction` task didn't run (worker restart, lost
+    # ClockedSchedule, etc.). Marks no-bid auctions as FAILED.
+    "sweep_overdue_auctions": {
+        "task": "auctions.tasks.sweep_overdue_auctions",
+        "schedule": crontab(minute="*/5"),
+    },
     # Daily check for overdue deals
     "check_overdue_deals_daily": {
         "task": "deals.tasks.check_overdue_deals",

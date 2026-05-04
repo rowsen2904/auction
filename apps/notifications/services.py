@@ -26,6 +26,7 @@ class NotificationEvent:
     AUCTION_NOT_SELECTED = "auction_not_selected"
     AUCTION_FINISHED_OPEN = "auction_finished_open"
     AUCTION_FINISHED_CLOSED = "auction_finished_closed"
+    AUCTION_FAILED_NO_BIDS = "auction_failed_no_bids"
     AUCTION_RESULT_CONFIRMED = "auction_result_confirmed"
     AUCTION_RESULT_REJECTED = "auction_result_rejected"
     AUCTION_WINNER_DECLINED = "auction_winner_declined"
@@ -304,6 +305,36 @@ def notify_open_auction_finished_for_owner(*, auction, winner_bid=None) -> None:
             "winner_bid_id": getattr(winner_bid, "id", None),
         },
         dedupe_key=f"notif:auction_finished_open:{auction.id}",
+    )
+
+
+def notify_auction_failed_no_bids(*, auction) -> None:
+    """
+    Auction ended with no bids → marked as `failed`. Notify the owner
+    (developer) so they know to re-list the property.
+    """
+    address_source = (
+        getattr(auction, "real_property", None)
+        or auction.properties.first()
+        if hasattr(auction, "properties")
+        else getattr(auction, "real_property", None)
+    )
+    address = (
+        getattr(address_source, "address", None)
+        if address_source is not None
+        else f"#{auction.id}"
+    )
+    create_notification(
+        user=auction.owner,
+        category=Notification.Category.AUCTION,
+        event_type=NotificationEvent.AUCTION_FAILED_NO_BIDS,
+        message=(
+            f"Аукцион #{auction.id} ({address}) завершён без ставок. "
+            "Объект снова доступен для размещения"
+        ),
+        auction=auction,
+        data={"auction_id": auction.id},
+        dedupe_key=f"notif:auction_failed_no_bids:{auction.id}",
     )
 
 
